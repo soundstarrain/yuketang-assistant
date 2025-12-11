@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "雨课堂考试助手",
   "version": "1.0.0",
-  "description": "一键提取雨课堂中的考试和试卷的所有题目，极简紧凑布局，专为截图搜题设计。",
+  "description": "一键提取雨课堂/学堂在线题目，支持AI批量秒解、答案自动生成。支持紧凑布局模式，为截图搜题优化，快速搞定作业与考试。",
   "homepage_url": "https://github.com/soundstarrain/yuketang-assistant",
   "permissions": [
     "activeTab",
