@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "雨课堂考试助手",
+  "version": "1.0.0",
+  "description": "一键提取雨课堂中的考试和试卷的所有题目，极简紧凑布局，专为截图搜题设计。",
+  "homepage_url": "https://github.com/soundstarrain/yuketang-assistant",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.yuketang.cn/*",
+    "*://*.xuetangx.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.yuketang.cn/*",
+        "*://*.xuetangx.com/*"
+      ],
+      "js": [
+        "libs/prism.min.js",
+        "libs/markdown-it.min.js",
+        "libs/katex.min.js",
+        "libs/auto-render.min.js",
+        "content.js"
+      ],
+      "css": [
+        "libs/katex.min.css",
+        "libs/prism-tomorrow.min.css"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "action": {
+    "default_title": "点击提取题目"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "libs/katex.min.js",
+        "libs/katex.min.css",
+        "libs/markdown-it.min.js",
+        "libs/prism.min.js",
+        "libs/prism-tomorrow.min.css",
+        "libs/auto-render.min.js",
+        "libs/components/*",
+        "libs/fonts/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
