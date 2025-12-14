@@ -6,8 +6,7 @@
   "homepage_url": "https://github.com/soundstarrain/yuketang-assistant",
   "permissions": [
     "activeTab",
-    "scripting",
-    "storage"
+    "scripting"
   ],
   "host_permissions": [
     "*://*.yuketang.cn/*",
