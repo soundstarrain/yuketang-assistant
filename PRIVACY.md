@@ -13,7 +13,7 @@ This Privacy Policy explains how we handle your data. **In short: We (the develo
 The Extension does not collect, track, or transmit any user data, usage statistics, or personal information to the developer or any servers owned by the developer. The Extension operates directly within your browser.
 
 ### 2.2. Local Storage
-The Extension uses your browser's Local Storage (`localStorage`) to save your preferences and configurations. This data never leaves your browser.
+The Extension uses your browser's Local Storage to save your preferences and configurations. This data never leaves your browser.
 *   **Configuration Data:** Includes your UI layout preferences (`layoutMode`).
 *   **AI Credentials:** If you choose to use the AI solving feature, your API Endpoint URL, API Key, and Model Name (`aiConfig`) are stored locally on your device.
 
@@ -27,7 +27,6 @@ The Extension includes a feature to solve questions using Artificial Intelligenc
 
 The Extension requests the minimum necessary permissions to function:
 *   **`activeTab` / Page Access:** Required to read the DOM elements of the Rain Classroom page to extract questions and slides.
-*   **`storage`:** Required to save your settings (e.g., API configuration) locally so you don't have to re-enter them every time.
 *   **`scripting`:** Required to inject the extraction scripts into the webpage.
 
 ## 4. Data Security
@@ -38,4 +37,5 @@ The Extension requests the minimum necessary permissions to function:
 We may update this Privacy Policy from time to time. If we make significant changes, we will update the "Effective Date" at the top of this policy.
 
 ## 6. Contact
+
 If you have any questions about this Privacy Policy, please contact the developer via the GitHub repository issues page.
