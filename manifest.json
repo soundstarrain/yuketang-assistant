@@ -6,7 +6,8 @@
   "homepage_url": "https://github.com/soundstarrain/yuketang-assistant",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage"
   ],
   "host_permissions": [
     "*://*.yuketang.cn/*",
@@ -18,12 +19,32 @@
         "*://*.yuketang.cn/*",
         "*://*.xuetangx.com/*"
       ],
+      "exclude_matches": [
+        "*://examination.xuetangx.com/result/*"
+      ],
       "js": [
         "libs/prism.min.js",
         "libs/markdown-it.min.js",
         "libs/katex.min.js",
         "libs/auto-render.min.js",
         "content.js"
+      ],
+      "css": [
+        "libs/katex.min.css",
+        "libs/prism-tomorrow.min.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://examination.xuetangx.com/result/*"
+      ],
+      "js": [
+        "libs/prism.min.js",
+        "libs/markdown-it.min.js",
+        "libs/katex.min.js",
+        "libs/auto-render.min.js",
+        "result_handler.js"
       ],
       "css": [
         "libs/katex.min.css",
@@ -53,7 +74,9 @@
         "libs/components/*",
         "libs/fonts/*"
       ],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }

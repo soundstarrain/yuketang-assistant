@@ -14,7 +14,7 @@
  * - 保持原有功能完全不变
  */
 
-(function() {
+(function () {
   'use strict';
 
   // ============ 配置管理器 ============
@@ -45,8 +45,8 @@
 
     getDefaultConfig() {
       return {
-        app: { 
-          name: '雨课堂考试助手', 
+        app: {
+          name: '雨课堂考试助手',
           version: '1.0.0',
           description: '支持 PPT 模式和题目模式的试题提取工具'
         },
@@ -70,13 +70,13 @@
           ]
         },
         extractors: {
-          meta: { 
-            selector: '.item-type', 
-            fallback: '题 {index}' 
+          meta: {
+            selector: '.item-type',
+            fallback: '题 {index}'
           },
-          body: { 
-            selectors: ['.item-body h4', 'h4'], 
-            fallback: '（题干提取失败）' 
+          body: {
+            selectors: ['.item-body h4', 'h4'],
+            fallback: '（题干提取失败）'
           },
           options: {
             selectors: ['.list-unstyled-checkbox', '.list-unstyled-radio'],
@@ -84,15 +84,15 @@
             contentSelectors: ['.checkboxText', '.radioText'],
             fallback: '[主观题]'
           },
-          images: { 
-            selector: 'img', 
-            attribute: 'src' 
+          images: {
+            selector: 'img',
+            attribute: 'src'
           }
         },
         contentProcessing: {
           removeSelectors: [
-            '.el-icon-loading', 
-            '.upload-body', 
+            '.el-icon-loading',
+            '.upload-body',
             '.btn.support',
             '.uploadvue',
             '.el-checkbox__input',
@@ -107,9 +107,9 @@
             '.el-radio__label',
             'i.el-icon-loading'
           ],
-          imageStyles: { 
-            maxWidth: '300px', 
-            maxHeight: '150px' 
+          imageStyles: {
+            maxWidth: '300px',
+            maxHeight: '150px'
           },
           replacePatterns: [
             {
@@ -167,21 +167,21 @@
             }
           },
           colors: {
-            ppt: { 
-              background: '#2c3e50', 
-              toolbar: '#ffffff', 
-              button: '#3498db', 
-              buttonHover: '#2980b9', 
-              danger: '#e74c3c', 
-              success: '#27ae60' 
+            ppt: {
+              background: '#2c3e50',
+              toolbar: '#ffffff',
+              button: '#3498db',
+              buttonHover: '#2980b9',
+              danger: '#e74c3c',
+              success: '#27ae60'
             },
-            question: { 
-              background: '#ffffff', 
-              toolbar: '#c8e6c9', 
-              toolbarText: '#2d5016', 
-              button: '#1b5e20', 
-              meta: '#666666', 
-              body: '#000000', 
+            question: {
+              background: '#ffffff',
+              toolbar: '#c8e6c9',
+              toolbarText: '#2d5016',
+              button: '#1b5e20',
+              meta: '#666666',
+              body: '#000000',
               optionLabel: '#1976d2',
               aiSuccess: '#f6ffed',
               aiError: '#fff2f0',
@@ -228,8 +228,8 @@
             ]
           }
         },
-        ppt: { 
-          toolbar: { 
+        ppt: {
+          toolbar: {
             buttons: [
               {
                 id: 'merge-images',
@@ -243,17 +243,17 @@
                 class: 'danger',
                 action: 'deleteAll()'
               }
-            ] 
-          }, 
-          grid: { 
-            columns: 'repeat(auto-fill, minmax(280px, 1fr))', 
-            gap: '20px' 
-          }, 
-          card: { 
-            aspectRatio: '160%', 
-            shadow: '0 4px 6px rgba(0,0,0,0.3)', 
-            hoverShadow: '0 10px 20px rgba(0,0,0,0.4)' 
-          } 
+            ]
+          },
+          grid: {
+            columns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gap: '20px'
+          },
+          card: {
+            aspectRatio: '160%',
+            shadow: '0 4px 6px rgba(0,0,0,0.3)',
+            hoverShadow: '0 10px 20px rgba(0,0,0,0.4)'
+          }
         },
         storage: {
           keys: {
@@ -407,7 +407,7 @@
 
         const elapsedTime = Date.now() - startTime;
         if (elapsedTime < this.config.loadingDuration) {
-          await new Promise(resolve => 
+          await new Promise(resolve =>
             setTimeout(resolve, this.config.loadingDuration - elapsedTime)
           );
         }
@@ -442,7 +442,7 @@
     }
 
     async handleSolveMultiple(questionsData, solveFunction, options = {}) {
-      const { 
+      const {
         maxConcurrent = 30,
         onProgress,
         onQuestionsStateChange
@@ -595,14 +595,14 @@
 
       const resultDiv = document.createElement('div');
       resultDiv.className = this.config.resultClass;
-      
+
       // 构建耗时显示信息
       let durationHtml = '';
       if (result.duration) {
         durationHtml = `<div class="ai-duration">用时：${result.duration}s`;
         durationHtml += '</div>';
       }
-      
+
       resultDiv.innerHTML = `
         <b>AI 解答结果</b>
         <div class="answer">答案：${this.escapeHtml(result.answer || '无法获取答案')}</div>
@@ -641,8 +641,8 @@
 
     getQuestionElement(questionId) {
       const qId = String(questionId);
-      return document.querySelector(`[data-index="${qId}"]`) || 
-             document.querySelector(`[data-question-id="${qId}"]`);
+      return document.querySelector(`[data-index="${qId}"]`) ||
+        document.querySelector(`[data-question-id="${qId}"]`);
     }
 
     updateState(questionId, status, data = null) {
@@ -763,7 +763,7 @@
       const config = await this.configManager.loadAppConfig();
       const metaConfig = config.extractors.meta;
       let metaText = metaConfig.fallback.replace('{index}', index + 1);
-      
+
       const typeNode = questionElement.querySelector(metaConfig.selector);
       if (typeNode) {
         metaText = typeNode.innerText.replace(/\s+/g, ' ').trim();
@@ -851,7 +851,7 @@
       const images = [];
       const imgConfig = config.extractors.images;
       const imgs = questionElement.querySelectorAll(imgConfig.selector);
-      
+
       imgs.forEach((img) => {
         const src = img.getAttribute(imgConfig.attribute);
         if (src) images.push(src);
@@ -882,13 +882,13 @@
       const clone = element.cloneNode(true);
       const removeConfig = config.contentProcessing.removeSelectors;
       const useless = clone.querySelectorAll(removeConfig.join(', '));
-      
+
       useless.forEach((el) => el.remove());
 
       // 修复图片 URL
       const imgs = clone.querySelectorAll('img');
       const imageStyles = config.contentProcessing.imageStyles;
-      
+
       imgs.forEach((img) => {
         let src = img.getAttribute('src');
         if (src && !src.startsWith('http')) {
@@ -978,14 +978,14 @@
     getStyles() {
       const colors = this.config.ui.colors.ppt;
       const ppt = this.config.ppt;
-      
+
       return `body{background-color:${colors.background};margin:0;padding:20px;padding-top:80px;font-family:sans-serif;user-select:none}.tips{text-align:center;color:#ccc;padding:10px;background:#444;margin-bottom:20px}.toolbar{position:fixed;top:0;left:0;right:0;height:60px;background:${colors.toolbar};box-shadow:0 2px 10px rgba(0,0,0,0.2);z-index:10000;display:flex;align-items:center;justify-content:space-between;padding:0 30px}.toolbar h2{margin:0}.toolbar-right{display:flex;gap:10px}.btn{background:${colors.button};color:white;border:none;padding:8px 15px;border-radius:4px;cursor:pointer;font-size:14px;transition:background 0.2s}.btn:hover{background:${colors.buttonHover}}.btn.danger{background:${colors.danger}}.btn.danger:hover{background:#c0392b}.btn.success{background:${colors.success}}.btn.success:hover{background:#229954}.grid-container{display:grid;grid-template-columns:${ppt.grid.columns};gap:${ppt.grid.gap};padding-bottom:50px}.ppt-card{background:white;position:relative;width:100%;padding-bottom:${ppt.card.aspectRatio};box-shadow:${ppt.card.shadow};border-radius:6px;overflow:hidden;cursor:grab;transition:transform 0.2s;user-select:none}.ppt-card:hover{transform:translateY(-5px);box-shadow:${ppt.card.hoverShadow};z-index:10}.ppt-card.dragging{opacity:0.5;border:2px dashed #f1c40f}.ppt-inner{position:absolute;top:0;left:0;width:100%;height:100%;transform:none !important}.pptimg{position:absolute !important;background-size:100% 100% !important;background-repeat:no-repeat !important;display:block !important;opacity:1 !important}.delete-btn{position:absolute;top:5px;right:5px;width:24px;height:24px;background:${colors.danger};color:white;border-radius:50%;text-align:center;line-height:24px;cursor:pointer;z-index:9999;pointer-events:auto;font-weight:bold;transition:background 0.2s}.delete-btn:hover{background:#c0392b}.page-idx{position:absolute;top:5px;left:5px;background:rgba(0,0,0,0.6);color:white;font-size:12px;padding:2px 6px;border-radius:3px;z-index:9998}.problem_type_box,.bottom_commit,.subjective--btn{display:none !important}.problembullet{z-index:1000 !important}.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:20000;align-items:center;justify-content:center}.modal.show{display:flex}.modal-content{background:white;padding:30px;border-radius:8px;max-width:500px;box-shadow:0 10px 40px rgba(0,0,0,0.3)}.modal-content h3{margin-top:0}.modal-content p{margin:10px 0}.modal-buttons{display:flex;gap:10px;margin-top:20px;justify-content:flex-end}`;
     }
 
     buildToolbar() {
       const buttons = this.config.ppt.toolbar.buttons;
       let buttonsHtml = '';
-      
+
       for (const btn of buttons) {
         buttonsHtml += `<button class="btn ${btn.class}" onclick="${btn.action}">${btn.label}</button>`;
       }
@@ -995,7 +995,7 @@
 
     buildGrid() {
       let gridHtml = '<div class="grid-container" id="grid">';
-      
+
       this.items.forEach((item, index) => {
         // 使用克隆，避免改动原页面 DOM
         const clone = item.cloneNode(true);
@@ -1158,12 +1158,13 @@
    * 题目渲染器 - 渲染题目模式
    */
   class QuestionRenderer extends BaseRenderer {
-    constructor(items, config, features = {}) {
+    constructor(items, config, features = {}, aiConfig = {}) {
       super(items);
       this.config = config;
       this.aiSolver = features.aiSolver;
       this.layoutManager = features.layoutManager;
       this.extractor = features.extractor;
+      this.aiConfig = aiConfig;
     }
 
     async render() {
@@ -1200,6 +1201,9 @@
             <script src="${chrome.runtime.getURL('libs/katex.min.js')}"></script>
             <script src="${chrome.runtime.getURL('libs/auto-render.min.js')}"></script>
             <script src="${chrome.runtime.getURL('libs/prism.min.js')}"></script>
+            <script>
+               window.currentAIConfig = ${JSON.stringify(this.aiConfig || {})};
+            </script>
             <script>${this.getScripts()}</script>
         </body>
       `;
@@ -1209,14 +1213,24 @@
 
     getStyles() {
       const colors = this.config.ui.colors.question;
-      
-      return `body{font-family:"Microsoft YaHei",sans-serif;background:${colors.background};margin:0;padding:10px;color:${colors.body};font-size:14px;line-height:1.4}.toolbar{position:fixed;top:0;left:0;right:0;background:${colors.toolbar};color:${colors.toolbarText};padding:10px 20px;z-index:9999;display:flex;gap:20px;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,0.2)}.toolbar-info{font-size:14px;font-weight:bold}.toolbar-buttons{display:flex;gap:15px;margin-left:auto}.btn{cursor:pointer;color:${colors.button};font-weight:bold;background:rgba(255,255,255,0.7);border:1px solid #81c784;font-size:13px;padding:5px 10px;border-radius:3px;transition:background 0.2s}.btn:hover{background:rgba(255,255,255,1)}.btn.danger{color:#c62828}.btn.danger:hover{background:rgba(255,255,255,1)}.q-container{max-width:100%;padding-top:60px;padding-bottom:20px}.q-item{border-bottom:1px solid #eee;padding:8px 0;display:flex;flex-direction:column;break-inside:avoid;margin-bottom:5px}.q-meta{font-weight:bold;color:${colors.meta};font-size:12px;background:#f9f9f9;padding:3px 8px;border-radius:3px;margin-bottom:4px;display:inline-block;width:fit-content}.q-body{font-weight:500;color:${colors.body};margin-bottom:4px;word-break:break-word}.q-body p{margin:2px 0}img{max-width:300px !important;max-height:150px !important;height:auto !important;vertical-align:middle;border:1px solid #eee;border-radius:3px}.q-options{display:flex;flex-wrap:wrap;gap:10px 20px;margin-top:4px;padding-left:5px}.q-opt{display:flex;align-items:flex-start;font-size:13px;color:#333;background:#fdfdfd;padding:3px 8px;border-radius:3px;border:1px solid #f0f0f0}.q-opt-label{font-weight:bold;color:${colors.optionLabel};margin-right:5px;white-space:nowrap;min-width:20px}.q-opt-content p{margin:0;display:inline}.q-delete{display:none}body.compact-mode{padding:5px}body.compact-mode .q-container{padding-top:50px;padding-bottom:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}body.compact-mode .q-item{border:1px solid #ddd;border-radius:4px;padding:6px;margin-bottom:0;background:#fafafa}body.compact-mode .q-meta{padding:2px 4px;font-size:11px;margin-bottom:3px}body.compact-mode .q-body{font-size:12px;margin-bottom:3px;line-height:1.3}body.compact-mode .q-options{gap:5px 10px;margin-top:3px;padding-left:2px}body.compact-mode .q-opt{font-size:11px;padding:2px 4px}body.compact-mode img{max-width:200px !important;max-height:100px !important}body.compact-mode .ai-tools{gap:5px;margin-left:5px}body.compact-mode .ai-btn{font-size:11px;padding:2px 4px}body.compact-mode .ai-result{padding:4px;font-size:11px;margin-top:3px}body.ultra-compact-mode{padding:3px;font-size:12px}body.ultra-compact-mode .q-container{padding-top:50px;padding-bottom:10px;columns:auto;column-width:280px;column-gap:6px;column-rule:none}body.ultra-compact-mode .q-item{border:1px solid #d8d8d8;border-radius:2px;padding:4px;margin-bottom:6px;background:#fafafa;display:flex;flex-direction:column;break-inside:avoid;page-break-inside:avoid;overflow:visible}body.ultra-compact-mode .q-meta{padding:1px 3px;font-size:9px;margin-bottom:2px;font-weight:bold;color:${colors.meta};background:#f5f5f5;border-radius:2px;display:inline-block;width:fit-content}body.ultra-compact-mode .q-body{font-size:10px;margin-bottom:2px;line-height:1.15;word-break:break-word;word-wrap:break-word;overflow-wrap:break-word;hyphens:auto}body.ultra-compact-mode .q-body p{margin:0;padding:0;display:inline}body.ultra-compact-mode .q-body p:not(:last-child)::after{content:' '}body.ultra-compact-mode .q-options{gap:2px 4px;margin-top:2px;padding-left:0;flex-wrap:wrap;display:flex;align-items:flex-start}body.ultra-compact-mode .q-opt{font-size:9px;padding:1px 2px;background:#fff;border:1px solid #e8e8e8;border-radius:1px;flex-shrink:0;line-height:1.1;display:inline-flex;align-items:flex-start}body.ultra-compact-mode .q-opt-label{font-size:9px;margin-right:1px;min-width:12px;font-weight:bold;color:${colors.optionLabel}}body.ultra-compact-mode .q-opt-content{font-size:9px;word-break:break-word;overflow-wrap:break-word;max-width:150px}body.ultra-compact-mode .q-opt-content p{margin:0;padding:0;display:inline}body.ultra-compact-mode img{max-width:120px !important;max-height:70px !important;height:auto !important;margin:1px 0;border:none;border-radius:2px}body.ultra-compact-mode .ai-tools{gap:2px;margin-left:0;margin-top:1px;display:inline-flex}body.ultra-compact-mode .ai-btn{font-size:8px;padding:1px 2px;border:1px solid #16a085;border-radius:1px;background:#f0fffe;color:#16a085;cursor:pointer;white-space:nowrap}body.ultra-compact-mode .ai-btn:hover{background:#e8f8f6}body.ultra-compact-mode .ai-result{padding:2px;font-size:8px;margin-top:1px;border-radius:1px;background:${colors.aiSuccess};border:1px solid #b7eb8f;line-height:1.1}body.ultra-compact-mode .ai-result b{font-size:8px;margin-bottom:1px;display:block}body.ultra-compact-mode .ai-result .answer{font-size:8px;margin-bottom:1px;font-weight:bold;color:#1a5c4a}body.ultra-compact-mode .ai-result .thinking{font-size:7px;margin-top:1px;padding-top:1px;border-top:1px solid #b7eb8f;color:#666}body.ultra-compact-mode .ai-result .ai-duration{font-size:7px;margin-top:1px;padding-top:1px;border-top:1px solid #b7eb8f;color:#666;text-align:right}.ai-tools{display:inline-flex;gap:8px;margin-left:10px}.ai-btn{cursor:pointer;color:#16a085;font-size:12px;border:none;background:none;padding:3px 6px;border-radius:3px;font-weight:bold}.ai-btn:hover{background:rgba(22,160,133,.15)}.ai-btn:disabled{opacity:0.5;cursor:not-allowed}.ai-result{background:${colors.aiSuccess};border:1px solid #b7eb8f;padding:8px;border-radius:4px;margin-top:6px}.ai-result b{color:#2c7a7b;display:block;margin-bottom:4px}.ai-result .answer{color:#1a5c4a;font-weight:bold;margin-bottom:4px}.ai-result .thinking{color:#666;font-size:12px;margin-top:4px;padding-top:4px;border-top:1px solid #b7eb8f}.ai-duration{color:#999;font-size:11px;margin-top:4px;padding-top:4px;border-top:1px solid #d9f7be;text-align:right;font-style:italic}.api-duration-info{color:#1890ff;font-weight:500;margin-left:8px}.api-duration-info::before{content:'|';margin-right:8px;color:#d9d9d9}.ai-error{background:${colors.aiError};border:1px solid #ffccc7;padding:8px;border-radius:4px;color:#a8071a;margin-top:6px}.ai-loading{background:${colors.aiLoading};border:1px solid #91d5ff;padding:8px;border-radius:4px;margin-top:6px;color:#0050b3}.cfg-input{width:100%;padding:6px 8px;margin-top:4px;box-sizing:border-box}.cfg-label{font-size:12px;color:#555}.cfg-row{margin-bottom:10px}.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:20000;align-items:center;justify-content:center}.modal.show{display:flex}.modal-content{background:white;padding:20px;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.3)}.modal-buttons{display:flex;gap:10px;margin-top:15px;justify-content:flex-end}@keyframes slideIn{from{transform:translateX(400px);opacity:0}to{transform:translateX(0);opacity:1}}@keyframes slideOut{from{transform:translateX(0);opacity:1}to{transform:translateX(400px);opacity:0}}`;
+
+      return `body{font-family:"Microsoft YaHei",sans-serif;background:${colors.background};margin:0;padding:10px;color:${colors.body};font-size:14px;line-height:1.4}.toolbar{position:fixed;top:0;left:0;right:0;background:${colors.toolbar};color:${colors.toolbarText};padding:10px 20px;z-index:9999;display:flex;gap:20px;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,0.2)}.toolbar-info{font-size:14px;font-weight:bold}.toolbar-buttons{display:flex;gap:15px;margin-left:auto}.btn{cursor:pointer;color:${colors.button};font-weight:bold;background:rgba(255,255,255,0.7);border:1px solid #81c784;font-size:13px;padding:5px 10px;border-radius:3px;transition:background 0.2s}.btn:hover{background:rgba(255,255,255,1)}.btn.danger{color:#c62828}.btn.danger:hover{background:rgba(255,255,255,1)}.q-container{max-width:100%;padding-top:60px;padding-bottom:20px}.q-item{border-bottom:1px solid #eee;padding:8px 0;display:flex;flex-direction:column;break-inside:avoid;margin-bottom:5px}.q-meta{font-weight:bold;color:${colors.meta};font-size:12px;background:#f9f9f9;padding:3px 8px;border-radius:3px;margin-bottom:4px;display:inline-block;width:fit-content}.q-body{font-weight:500;color:${colors.body};margin-bottom:4px;word-break:break-word}.q-body p{margin:2px 0}img{max-width:300px !important;max-height:150px !important;height:auto !important;vertical-align:middle;border:1px solid #eee;border-radius:3px}.q-options{display:flex;flex-wrap:wrap;gap:10px 20px;margin-top:4px;padding-left:5px}.q-opt{display:flex;align-items:flex-start;font-size:13px;color:#333;background:#fdfdfd;padding:3px 8px;border-radius:3px;border:1px solid #f0f0f0}.q-opt-label{font-weight:bold;color:${colors.optionLabel};margin-right:5px;white-space:nowrap;min-width:20px}.q-opt-content p{margin:0;display:inline}.q-delete{display:none}body.compact-mode{padding:5px}body.compact-mode .q-container{padding-top:50px;padding-bottom:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}body.compact-mode .q-item{border:1px solid #ddd;border-radius:4px;padding:6px;margin-bottom:0;background:#fafafa}body.compact-mode .q-meta{padding:2px 4px;font-size:11px;margin-bottom:3px}body.compact-mode .q-body{font-size:12px;margin-bottom:3px;line-height:1.3}body.compact-mode .q-options{gap:5px 10px;margin-top:3px;padding-left:2px}body.compact-mode .q-opt{font-size:11px;padding:2px 4px}body.compact-mode img{max-width:200px !important;max-height:100px !important}body.compact-mode .ai-tools{gap:5px;margin-left:5px}body.compact-mode .ai-btn{font-size:11px;padding:2px 4px}body.compact-mode .ai-result{padding:4px;font-size:11px;margin-top:3px}body.ultra-compact-mode{padding:3px;font-size:12px}body.ultra-compact-mode .q-container{padding-top:50px;padding-bottom:10px;columns:auto;column-width:280px;column-gap:6px;column-rule:none}body.ultra-compact-mode .q-item{border:1px solid #d8d8d8;border-radius:2px;padding:4px;margin-bottom:6px;background:#fafafa;display:flex;flex-direction:column;break-inside:avoid;page-break-inside:avoid;overflow:visible}body.ultra-compact-mode .q-meta{padding:1px 3px;font-size:9px;margin-bottom:2px;font-weight:bold;color:${colors.meta};background:#f5f5f5;border-radius:2px;display:inline-block;width:fit-content}body.ultra-compact-mode .q-body{font-size:10px;margin-bottom:2px;line-height:1.15;word-break:break-word;word-wrap:break-word;overflow-wrap:break-word;hyphens:auto}body.ultra-compact-mode .q-body p{margin:0;padding:0;display:inline}body.ultra-compact-mode .q-body p:not(:last-child)::after{content:' '}body.ultra-compact-mode .q-options{gap:2px 4px;margin-top:2px;padding-left:0;flex-wrap:wrap;display:flex;align-items:flex-start}body.ultra-compact-mode .q-opt{font-size:9px;padding:1px 2px;background:#fff;border:1px solid #e8e8e8;border-radius:1px;flex-shrink:0;line-height:1.1;display:inline-flex;align-items:flex-start}body.ultra-compact-mode .q-opt-label{font-size:9px;margin-right:1px;min-width:12px;font-weight:bold;color:${colors.optionLabel}}body.ultra-compact-mode .q-opt-content{font-size:9px;word-break:break-word;overflow-wrap:break-word;max-width:150px}body.ultra-compact-mode .q-opt-content p{margin:0;padding:0;display:inline}body.ultra-compact-mode img{max-width:120px !important;max-height:70px !important;height:auto !important;margin:1px 0;border:none;border-radius:2px}body.ultra-compact-mode .ai-tools{gap:2px;margin-left:0;margin-top:1px;display:inline-flex}body.ultra-compact-mode .ai-btn{font-size:8px;padding:1px 2px;border:1px solid #16a085;border-radius:1px;background:#f0fffe;color:#16a085;cursor:pointer;white-space:nowrap}body.ultra-compact-mode .ai-btn:hover{background:#e8f8f6}body.ultra-compact-mode .ai-result{padding:2px;font-size:8px;margin-top:1px;border-radius:1px;background:${colors.aiSuccess};border:1px solid #b7eb8f;line-height:1.1}body.ultra-compact-mode .ai-result b{font-size:8px;margin-bottom:1px;display:block}body.ultra-compact-mode .ai-result .answer{font-size:8px;margin-bottom:1px;font-weight:bold;color:#1a5c4a}body.ultra-compact-mode .ai-result .thinking{font-size:7px;margin-top:1px;padding-top:1px;border-top:1px solid #b7eb8f;color:#666}body.ultra-compact-mode .ai-result .ai-duration{font-size:7px;margin-top:1px;padding-top:1px;border-top:1px solid #b7eb8f;color:#666;text-align:right}        /* 试卷模式兼容样式 */
+        .q-answer-block{margin-top:5px;padding:8px;background:#e6f7ff;border:1px solid #91d5ff;color:#0050b3;border-radius:4px;font-size:14px;font-weight:bold}
+        .q-explanation-block{margin-top:5px;padding:8px;background:#fffbe6;border:1px solid #ffe58f;border-radius:4px;font-size:13px;color:#666}
+
+        .ai-tools{display:inline-flex;gap:8px;margin-left:10px}
+        .ai-btn{color:#fff;border:none;background:#27ae60;padding:4px 10px;border-radius:3px;font-size:12px;cursor:pointer;font-weight:bold;box-shadow:0 2px 5px rgba(39,174,96,0.2)}
+        .ai-btn:hover{background:#219150}
+        .ai-btn:disabled{opacity:0.5;cursor:not-allowed}
+        .ai-result{background:${colors.aiSuccess};border:2px solid #b7eb8f;padding:10px;border-radius:4px;margin-top:8px}
+        .ai-result b{color:#2c7a7b;display:block;margin-bottom:4px}
+        .ai-result .answer{color:#135200;font-weight:bold;margin-bottom:4px;font-size:14px;background:rgba(82,196,26,0.1);padding:2px 5px;border-radius:3px;display:inline-block}.ai-result .thinking{color:#666;font-size:12px;margin-top:4px;padding-top:4px;border-top:1px solid #b7eb8f}.ai-duration{color:#999;font-size:11px;margin-top:4px;padding-top:4px;border-top:1px solid #d9f7be;text-align:right;font-style:italic}.api-duration-info{color:#1890ff;font-weight:500;margin-left:8px}.api-duration-info::before{content:'|';margin-right:8px;color:#d9d9d9}.ai-error{background:${colors.aiError};border:1px solid #ffccc7;padding:8px;border-radius:4px;color:#a8071a;margin-top:6px}.ai-loading{background:${colors.aiLoading};border:1px solid #91d5ff;padding:8px;border-radius:4px;margin-top:6px;color:#0050b3}.cfg-input{width:100%;padding:6px 8px;margin-top:4px;box-sizing:border-box}.cfg-label{font-size:12px;color:#555}.cfg-row{margin-bottom:10px}.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:20000;align-items:center;justify-content:center}.modal.show{display:flex}.modal-content{background:white;padding:20px;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.3)}.modal-buttons{display:flex;gap:10px;margin-top:15px;justify-content:flex-end}@keyframes slideIn{from{transform:translateX(400px);opacity:0}to{transform:translateX(0);opacity:1}}@keyframes slideOut{from{transform:translateX(0);opacity:1}to{transform:translateX(400px);opacity:0}}`;
     }
 
     buildToolbar() {
       const buttons = this.config.ui.toolbar.buttons || [];
       let buttonsHtml = '';
-      
+
       for (const btn of buttons) {
         buttonsHtml += `<button class="btn" onclick="${btn.action}">${btn.label}</button>`;
       }
@@ -1227,7 +1241,7 @@
     buildQuestions(extractedData) {
       let questionsHtml = '';
       const useExtracted = Array.isArray(extractedData) && extractedData.length === this.items.length;
-      
+
       this.items.forEach((item, index) => {
         const data = useExtracted ? extractedData[index] : this.extractQuestionDataFallback(item, index);
         questionsHtml += `<div class=\"q-item\" data-index=\"${index}\"><div class=\"q-meta\">${data.meta}</div><div class=\"q-body\">${data.body}</div>${data.options}<div class=\"ai-tools\"><button class=\"ai-btn\" onclick=\"window.aiSolveOne(${index})\">AI解答</button></div></div>`;
@@ -1416,8 +1430,14 @@
         window.setLayout=function(mode){
           const modeMap={'normal':'','compact':'compact-mode','ultra':'ultra-compact-mode'};
           document.body.className=modeMap[mode]||'';
-          localStorage.setItem('layoutMode',mode)
+          document.body.className=modeMap[mode]||'';
+          chrome.storage.local.set({layoutMode: mode});
         };
+        
+        // Restore layout
+        chrome.storage.local.get(['layoutMode'], (res) => {
+            if(res.layoutMode) window.setLayout(res.layoutMode);
+        });
         
         // 复制所有文本
         window.copyAll=function(){
@@ -1453,13 +1473,13 @@
           }
         };
         
-        // 打开 AI 配置
-        window.openAIConfig=function(){
+        // AI Logic
+        window.openAIConfig = () => {
           document.getElementById('aiConfigModal').classList.add('show');
-          const config=JSON.parse(localStorage.getItem('aiConfig')||'{}');
+          const config = window.currentAIConfig || {};
           document.getElementById('aiUrl').value=config.url||'';
           document.getElementById('aiKey').value=config.key||'';
-          document.getElementById('aiModel').value=config.model||'gpt-4o-mini'
+          document.getElementById('aiModel').value=config.model||'gpt-4o-mini';
         };
         
         // 关闭 AI 配置
@@ -1475,13 +1495,14 @@
               key:document.getElementById('aiKey').value,
               model:document.getElementById('aiModel').value
             };
-            localStorage.setItem('aiConfig',JSON.stringify(config));
-            if(window.Notification && typeof window.Notification.success === 'function'){
-              window.Notification.success('配置已保存');
-            }else{
-              console.log('配置已保存');
+            window.currentAIConfig = config;
+            if(window.opener) {
+               window.opener.postMessage({ type: 'SAVE_AI_CONFIG', config: config }, '*');
             }
             window.closeAIConfig();
+            if(window.Notification && typeof window.Notification.success === 'function'){
+                window.Notification.success('配置已更新 (请在原页面确认保存)');
+            }
           }catch(err){
             if(window.Notification && typeof window.Notification.error === 'function'){
               window.Notification.error('保存失败：'+(err?.message||String(err)));
@@ -1506,10 +1527,9 @@
           };
         }
         
-        // 单个题目 AI 解析
     // 单个题目 AI 解析
     window.aiSolveOne=async function(index){
-      const config=JSON.parse(localStorage.getItem('aiConfig')||'{}');
+      const config = window.currentAIConfig;
       if(!config.url||!config.key||!config.model){
         window.Notification.error('请先配置 AI 参数（API URL、Key、Model）');
         window.openAIConfig();
@@ -1580,9 +1600,8 @@
     };
         
         // 批量 AI 解析
-    // 批量 AI 解析
     window.aiSolveAll=async function(){
-      const config=JSON.parse(localStorage.getItem('aiConfig')||'{}');
+      const config = window.currentAIConfig;
       if(!config.url||!config.key||!config.model){
         window.Notification.error('请先配置 AI 参数（API URL、Key、Model）');
         window.openAIConfig();
@@ -1729,14 +1748,14 @@
   async function init() {
     try {
       window.__YKT_EXTRACTOR_INITTED__ = true;
-      
+
       console.log('开始初始化雨课堂考试助手...');
-      
+
       // 创建请求控制器
       const requestController = new RequestController();
       window.requestController = requestController;
       console.log('✅ RequestController 已初始化');
-      
+
       // 创建配置管理器
       const configManager = new ConfigManager();
       const config = await configManager.loadAppConfig();
@@ -1757,19 +1776,21 @@
 
       console.log(`✅ 检测到 ${count} 个${mode === 'ppt' ? 'PPT' : '题目'}元素`);
 
-      // 创建提取器
-      const extractor = new DataExtractor(configManager);
-
-      // 根据模式选择渲染器
-      let renderer;
       if (mode === 'ppt') {
-        renderer = new PPTRenderer(items, config);
-      } else {
-        renderer = new QuestionRenderer(items, config, { extractor });
-      }
+        const extractor = new DataExtractor(configManager);
+        const renderer = new PPTRenderer(items, config);
+        renderer.render();
+      } else if (mode === 'question') {
+        const extractor = new DataExtractor(configManager);
+        const aiConfig = await new Promise(resolve => chrome.storage.local.get(['aiConfig'], res => resolve(res.aiConfig || {})));
 
-      // 渲染
-      renderer.render();
+        const renderer = new QuestionRenderer(items, config, {
+          aiSolver: null, // Placeholder if needed
+          layoutManager: null, // Placeholder
+          extractor: extractor
+        }, aiConfig);
+        renderer.render();
+      }
       console.log('✅ 渲染完成');
 
     } catch (error) {
@@ -1780,6 +1801,6 @@
 
   // 暴露 init 函数到全局作用域，供插件按钮点击时调用
   window.__YKT_INIT__ = init;
-  
+
   console.log('✅ 雨课堂考试助手已加载，请点击插件按钮激活');
 })();
