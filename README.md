@@ -1,9 +1,9 @@
-# 雨课堂考试助手
+<h1 align="center">雨课堂考试助手</h1>
 
 <p align="center">
+  <a href="https://chromewebstore.google.com/detail/%E9%9B%A8%E8%AF%BE%E5%A0%82%E8%80%83%E8%AF%95%E5%8A%A9%E6%89%8B/opldlldmnaccpklolglicclmikcheidd?pli=1"><img src="https://img.shields.io/chrome-web-store/v/opldlldmnaccpklolglicclmikcheidd.svg" alt="Chrome Web Store"></a>
   <a href="manifest.json"><img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="版本"></a>
   <a href="#"><img src="https://img.shields.io/badge/platform-Chrome%20%7C%20Edge-green.svg" alt="适配平台"></a>
-  <a href="https://developer.chrome.com/docs/extensions/mv3/intro/"><img src="https://img.shields.io/badge/manifest-v3-orange.svg" alt="清单版本"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="许可证"></a>
 </p>
 
@@ -40,9 +40,19 @@
 
 ## 快速开始
 
-### 安装
+### 方式一：Chrome 商店安装（推荐）
 
-由于此扩展未在官方应用商店上架，你需要通过“开发者模式”手动安装：
+直接访问 Chrome 应用商店进行安装，享受自动更新：
+
+> **[📥 点击前往 Chrome Web Store 安装](https://chromewebstore.google.com/detail/%E9%9B%A8%E8%AF%BE%E5%A0%82%E8%80%83%E8%AF%95%E5%8A%A9%E6%89%8B/opldlldmnaccpklolglicclmikcheidd?pli=1)**
+
+⚠️ **注意**：由于应用商店的审核周期原因，**商店内的插件版本通常会落后 GitHub 仓库一个小版本**。如果您需要体验最新的功能特性或紧急修复，请使用下方的“手动安装”方式。
+
+---
+
+### 方式二：手动安装（最新版）
+
+如果你需要使用 Github 仓库中的最新代码，可以通过“开发者模式”手动安装：
 
 1.  **下载代码**：点击本页面右上角的 `Code` -> `Download ZIP`，下载并解压。
 2.  **打开扩展管理**：在 Chrome 或 Edge 浏览器地址栏输入 `chrome://extensions/` 并回车。
@@ -50,12 +60,12 @@
 4.  **加载扩展**：点击“加载已解压的扩展程序” (Load unpacked) 按钮，选择刚刚解压的文件夹，并且固定到工具栏中。
 5.  **安装成功**：插件图标会出现在工具栏中，安装完成！
 
-### 使用
+### 使用说明
 
 1.  登录并进入雨课堂的任意测验、试卷或课件页面。
 2.  点击浏览器工具栏右上角的 **“雨课堂试题提取工具”** 图标。
 3.  插件会自动在新标签页中为你呈现提取和整理后的内容。
-4.  （可选）在打开的页面中，点击 **“API 配置”**，输入你的大语言模型 API 信息，即可启用AI解析。
+4.  （可选）在打开的页面中，点击 **“API 配置”**，输入你的大语言模型 API 信息，即可启用 AI 解析。
 
 ## 支持项目
 
