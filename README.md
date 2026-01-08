@@ -9,7 +9,7 @@
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-GPLv3-blue?style=flat-square" alt="License">
   </a>
-</p>>
+</p>
 
 <p align="center">
   <strong>本项目是一款基于雨课堂的 Chrome 扩展程序</strong><br/>
