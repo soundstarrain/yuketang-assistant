@@ -2,7 +2,6 @@
 
 <p align="center">
   <a href="https://chromewebstore.google.com/detail/%E9%9B%A8%E8%AF%BE%E5%A0%82%E8%80%83%E8%AF%95%E5%8A%A9%E6%89%8B/opldlldmnaccpklolglicclmikcheidd?pli=1"><img src="https://img.shields.io/chrome-web-store/v/opldlldmnaccpklolglicclmikcheidd.svg" alt="Chrome Web Store"></a>
-  <a href="manifest.json"><img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="版本"></a>
   <a href="#"><img src="https://img.shields.io/badge/platform-Chrome%20%7C%20Edge-green.svg" alt="适配平台"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="许可证"></a>
 </p>
