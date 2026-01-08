@@ -1,9 +1,11 @@
 <h1 align="center">雨课堂考试助手</h1>
 
 <p align="center">
-  <a href="https://chromewebstore.google.com/detail/%E9%9B%A8%E8%AF%BE%E5%A0%82%E8%80%83%E8%AF%95%E5%8A%A9%E6%89%8B/opldlldmnaccpklolglicclmikcheidd?pli=1"><img src="https://img.shields.io/chrome-web-store/v/opldlldmnaccpklolglicclmikcheidd.svg" alt="Chrome Web Store"></a>
-  <a href="#"><img src="https://img.shields.io/badge/platform-Chrome%20%7C%20Edge-green.svg" alt="适配平台"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="许可证"></a>
+  <a href="https://chromewebstore.google.com/detail/%E9%9B%A8%E8%AF%BE%E5%A0%82%E8%80%83%E8%AF%95%E5%8A%A9%E6%89%8B/opldlldmnaccpklolglicclmikcheidd">
+    <img src="https://img.shields.io/chrome-web-store/v/opldlldmnaccpklolglicclmikcheidd?style=for-the-badge&logo=google-chrome&logoColor=white&color=4285F4" alt="Version">
+  </a>
+  <img src="https://img.shields.io/badge/Manifest-V3-E37400?style=for-the-badge&logo=shield&logoColor=white" alt="MV3">
+  <img src="https://img.shields.io/badge/Platform-Chrome%20|%20Edge-34A853?style=for-the-badge" alt="Platform">
 </p>
 
 <p align="center">
