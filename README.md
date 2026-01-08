@@ -1,12 +1,15 @@
 <h1 align="center">雨课堂考试助手</h1>
 
 <p align="center">
-  <a href="https://chromewebstore.google.com/detail/%E9%9B%A8%E8%AF%BE%E5%A0%82%E8%80%83%E8%AF%95%E5%8A%A9%E6%89%8B/opldlldmnaccpklolglicclmikcheidd">
-    <img src="https://img.shields.io/chrome-web-store/v/opldlldmnaccpklolglicclmikcheidd?style=for-the-badge&logo=google-chrome&logoColor=white&color=4285F4" alt="Version">
+  <a href="https://chromewebstore.google.com/detail/%E9%9B%A8%E8%AF%BE%E5%A0%82%E8%80%83%E8%AF%95%E5%8A%A9%E6%89%8B/opldlldmnaccpklolglicclmikcheidd?pli=1">
+    <img src="https://img.shields.io/chrome-web-store/v/opldlldmnaccpklolglicclmikcheidd?style=flat-square&color=007acc&label=chrome%20web%20store" alt="Chrome Web Store">
   </a>
-  <img src="https://img.shields.io/badge/Manifest-V3-E37400?style=for-the-badge&logo=shield&logoColor=white" alt="MV3">
-  <img src="https://img.shields.io/badge/Platform-Chrome%20|%20Edge-34A853?style=for-the-badge" alt="Platform">
-</p>
+  <img src="https://img.shields.io/badge/manifest-v3-orange?style=flat-square" alt="Manifest V3">
+  <img src="https://img.shields.io/badge/platform-Chrome%20%7C%20Edge-97ca00?style=flat-square" alt="Platform">
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-GPLv3-blue?style=flat-square" alt="License">
+  </a>
+</p>>
 
 <p align="center">
   <strong>本项目是一款基于雨课堂的 Chrome 扩展程序</strong><br/>
