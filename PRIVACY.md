@@ -26,7 +26,7 @@ The Extension includes a feature to solve questions using Artificial Intelligenc
 ## 3. Permissions
 
 The Extension requests the minimum necessary permissions to function:
-*   **`activeTab` / Page Access:** Required to read the DOM elements of the Rain Classroom page to extract questions and slides.
+*   **`activeTab` / `Page Access`:** Required to read the DOM elements of the Rain Classroom page to extract questions and slides.
 *   **`scripting`:** Required to inject the extraction scripts into the webpage.
 
 ## 4. Data Security
@@ -39,3 +39,4 @@ We may update this Privacy Policy from time to time. If we make significant chan
 ## 6. Contact
 
 If you have any questions about this Privacy Policy, please contact the developer via the GitHub repository issues page.
+
