@@ -47,7 +47,7 @@
       return {
         app: {
           name: '雨课堂考试助手',
-          version: '1.0.0',
+          version: '1.2.0',
           description: '支持 PPT 模式和题目模式的试题提取工具'
         },
         selectors: {
