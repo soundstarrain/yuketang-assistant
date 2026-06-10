@@ -47,7 +47,7 @@
       return {
         app: {
           name: '雨课堂考试助手',
-          version: '1.2.0',
+          version: '1.3.0',
           description: '支持 PPT 模式和题目模式的试题提取工具'
         },
         selectors: {
@@ -1251,7 +1251,7 @@
 
             const payload = await response.json();
             const map = payload?.mappings || payload?.map || null;
-            if (map && typeof map === 'object') {
+            if (this.isUsableDecryptMap(map)) {
               this.decryptMapInfo = {
                 mapName,
                 count: Object.keys(map).length,
@@ -1278,8 +1278,9 @@
     async getStoredEncryptedFontMap(mapNames) {
       const readMapPayload = payload => {
         if (!payload || typeof payload !== 'object') return null;
+        if (payload.generatedAt && payload.algorithmVersion !== 2) return null;
         const map = payload.mappings || payload.map || payload;
-        return map && typeof map === 'object' ? map : null;
+        return this.isUsableDecryptMap(map) ? map : null;
       };
 
       for (const mapName of mapNames) {
@@ -1342,16 +1343,26 @@
           return null;
         }
 
-        const encryptedFamily = `ykt-auto-decrypt-${Date.now()}`;
+        await document.fonts?.ready;
+        let encryptedFamily = document.fonts?.check?.('16px "exam-data-decrypt-font"')
+          ? 'exam-data-decrypt-font'
+          : '';
         const referenceFamily = await this.ensureReferenceFontLoaded();
-        await this.loadFontFace(encryptedFamily, fontBuffer.slice(0));
+        if (!encryptedFamily) {
+          encryptedFamily = `ykt-auto-decrypt-${Date.now()}`;
+          await this.loadFontFace(encryptedFamily, fontBuffer.slice(0));
+        }
 
         const map = await this.buildGlyphMatchMap(encryptedChars, encryptedFamily, referenceFamily);
-        if (!map || Object.keys(map).length === 0) return null;
+        if (!this.isUsableDecryptMap(map)) {
+          console.warn('⚠️ 自动生成的字体映射自映射比例过高，已丢弃');
+          return null;
+        }
 
         await this.storeGeneratedFontMap(mapNames[0], map, {
           fontUrl,
           count: Object.keys(map).length,
+          algorithmVersion: 2,
           generatedAt: new Date().toISOString()
         });
 
@@ -1361,6 +1372,18 @@
         console.warn('⚠️ 自动生成加密字体映射失败', error);
         return null;
       }
+    }
+
+    isUsableDecryptMap(map) {
+      if (!map || typeof map !== 'object') return false;
+
+      const entries = Object.entries(map)
+        .filter(([key, value]) => key.length === 1 && typeof value === 'string' && value.length === 1 && /[\u3400-\u9fff]/.test(key));
+
+      if (entries.length === 0) return false;
+
+      const selfMapped = entries.filter(([key, value]) => key === value).length;
+      return selfMapped / entries.length < 0.2;
     }
 
     async fetchFontArrayBuffer(fontUrl) {
@@ -2160,6 +2183,7 @@
                window.currentAIConfig = ${JSON.stringify(this.aiConfig || {})};
             </script>
             <script>${this.getScripts()}</script>
+            <script src="${chrome.runtime.getURL('prompt_io.js')}"></script>
         </body>
       `;
 
@@ -2387,14 +2411,26 @@
         window.setLayout=function(mode){
           const modeMap={'normal':'','compact':'compact-mode','ultra':'ultra-compact-mode'};
           document.body.className=modeMap[mode]||'';
-          document.body.className=modeMap[mode]||'';
-          chrome.storage.local.set({layoutMode: mode});
+          try{
+            if(typeof chrome !== 'undefined' && chrome.storage?.local){
+              chrome.storage.local.set({layoutMode: mode});
+            }else{
+              localStorage.setItem('layoutMode', mode);
+            }
+          }catch(e){}
         };
         
         // Restore layout
-        chrome.storage.local.get(['layoutMode'], (res) => {
-            if(res.layoutMode) window.setLayout(res.layoutMode);
-        });
+        try{
+          if(typeof chrome !== 'undefined' && chrome.storage?.local){
+            chrome.storage.local.get(['layoutMode'], (res) => {
+                if(res.layoutMode) window.setLayout(res.layoutMode);
+            });
+          }else{
+            const savedLayoutMode = localStorage.getItem('layoutMode');
+            if(savedLayoutMode) window.setLayout(savedLayoutMode);
+          }
+        }catch(e){}
         
         // 复制所有文本
         window.copyAll=function(){
@@ -2430,177 +2466,14 @@
           }
         };
         
-        function getPromptQuestions(){
-          return Array.from(document.querySelectorAll('.q-item')).map(function(item,index){
-            var options = Array.from(item.querySelectorAll('.q-opt')).map(function(opt){
-              return {
-                label: (opt.querySelector('.q-opt-label')?.innerText || '').replace(/\\.$/, '').trim(),
-                text: opt.querySelector('.q-opt-content')?.innerText.trim() || opt.innerText.trim()
-              };
-            });
-            return {
-              id: index,
-              meta: item.querySelector('.q-meta')?.innerText.trim() || '',
-              body: item.querySelector('.q-body')?.innerText.trim() || '',
-              options: options,
-              images: Array.from(item.querySelectorAll('img')).map(function(img,imgIndex){
-                return {
-                  index: imgIndex,
-                  src: img.currentSrc || img.src || img.getAttribute('src') || ''
-                };
-              })
-            };
-          });
-        }
-
-        function blobToDataUrl(blob){
-          return new Promise(function(resolve,reject){
-            var reader = new FileReader();
-            reader.onload = function(){ resolve(reader.result); };
-            reader.onerror = function(){ reject(reader.error || new Error('图片读取失败')); };
-            reader.readAsDataURL(blob);
-          });
-        }
-
-        async function imageToPromptImage(image){
-          if(!image.src) return image;
-          if(image.src.indexOf('data:') === 0) return Object.assign({}, image, { dataUrl: image.src });
-          try{
-            var response = await fetch(image.src);
-            if(!response.ok) throw new Error('HTTP '+response.status);
-            var blob = await response.blob();
-            return Object.assign({}, image, {
-              mimeType: blob.type || '',
-              dataUrl: await blobToDataUrl(blob)
-            });
-          }catch(error){
-            return Object.assign({}, image, { error: error.message || String(error) });
-          }
-        }
-
-        async function attachPromptImages(questions){
-          for(var i=0;i<questions.length;i++){
-            var converted = [];
-            for(var j=0;j<questions[i].images.length;j++){
-              converted.push(await imageToPromptImage(questions[i].images[j]));
-            }
-            questions[i].images = converted;
-          }
-          return questions;
-        }
-
-        function buildSolvePrompt(questions){
-          var schema = {
-            results: [
-              {
-                id: 0,
-                answer: '答案内容；选择题使用选项字母，如 A 或 A,B；判断题使用 T/F；填空题按空依次给出',
-                solution: '简洁清晰的解题过程，支持 Markdown/KaTeX'
-              }
-            ]
-          };
-          var payload = {
-            schema: schema,
-            questions: questions
-          };
-          return [
-            '请解答下面 JSON 中的所有题目。',
-            '必须严格只返回一个 JSON 对象，不要使用 Markdown 代码块，不要添加解释性前后缀。',
-            '返回格式必须符合以下 schema：',
-            JSON.stringify(schema, null, 2),
-            '题目数据如下，images[].dataUrl 为图片的 base64 data URL：',
-            JSON.stringify(payload, null, 2),
-            '再次确认：只返回 JSON，格式为 {"results":[{"id":题目id,"answer":"...","solution":"..."}]}。results 必须覆盖全部题目。'
-          ].join('\\n\\n');
-        }
-
-        window.exportPrompt = async function(){
-          try{
-            var questions = await attachPromptImages(getPromptQuestions());
-            var promptText = buildSolvePrompt(questions);
-            await navigator.clipboard.writeText(promptText);
-            window.Notification.success('Prompt 已复制，共 '+questions.length+' 题');
-          }catch(error){
-            window.Notification.error('导出 Prompt 失败：'+(error?.message||String(error)));
-          }
+        window.exportPrompt = function(){
+          if(window.YktPromptIO && typeof window.YktPromptIO.exportPrompt === "function") return window.YktPromptIO.exportPrompt();
+          window.Notification.error("导出模块未加载，请重新打开助手页");
         };
 
-        function extractJsonText(text){
-          var clean = String(text || '').trim();
-          var fenced = clean.match(new RegExp('\\x60\\x60\\x60(?:json)?\\\\s*([\\\\s\\\\S]*?)\\x60\\x60\\x60', 'i'));
-          if(fenced) clean = fenced[1].trim();
-          var firstObject = clean.indexOf('{');
-          var lastObject = clean.lastIndexOf('}');
-          var firstArray = clean.indexOf('[');
-          var lastArray = clean.lastIndexOf(']');
-          if(firstObject >= 0 && lastObject > firstObject) return clean.slice(firstObject, lastObject + 1);
-          if(firstArray >= 0 && lastArray > firstArray) return clean.slice(firstArray, lastArray + 1);
-          return clean;
-        }
-
-        function normalizeImportedResults(parsed){
-          if(Array.isArray(parsed)) return parsed;
-          if(Array.isArray(parsed?.results)) return parsed.results;
-          if(Array.isArray(parsed?.answers)) return parsed.answers;
-          if(parsed && typeof parsed === 'object') {
-            return Object.keys(parsed).map(function(key){
-              var value = parsed[key];
-              if(value && typeof value === 'object') return Object.assign({ id: key }, value);
-              return { id: key, answer: String(value), solution: '' };
-            });
-          }
-          return [];
-        }
-
-        function renderImportedResult(id,result){
-          var numericId = Number(id);
-          var item = document.querySelector('[data-index="'+numericId+'"]');
-          if(!item) return false;
-          item.querySelectorAll('.ai-loading,.ai-error,.ai-result').forEach(function(node){ node.remove(); });
-          var container = document.createElement('div');
-          container.className = 'ai-result';
-          var answer = result.answer || result.result || '';
-          var solution = result.solution || result.explanation || result.reason || '';
-          var md = window.markdownit ? window.markdownit() : null;
-          var solutionHtml = md ? md.render(String(solution || '')) : String(solution || '');
-          container.innerHTML = '<b>AI解答结果</b><div class="answer">答案：'+answer+'</div><div class="thinking">解答过程：'+solutionHtml+'</div>';
-          item.appendChild(container);
-          if(window.Prism && window.Prism.highlightAllUnder) window.Prism.highlightAllUnder(container);
-          if(window.renderMathInElement){
-            window.renderMathInElement(container,{delimiters:[{left:'$',right:'$',display:true},{left:'$',right:'$',display:false},{left:'\\\\[',right:'\\\\]',display:true},{left:'\\\\(',right:'\\\\)',display:false}]});
-          }
-          return true;
-        }
-
-        function openImportDialog(){
-          var old = document.getElementById('importResultsModal');
-          if(old) old.remove();
-          var modal = document.createElement('div');
-          modal.id = 'importResultsModal';
-          modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:30000;display:flex;align-items:center;justify-content:center;';
-          modal.innerHTML = '<div style="background:#fff;width:min(900px,90vw);height:min(620px,80vh);padding:16px;border-radius:6px;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);"><h3 style="margin:0 0 10px;">导入解题结果 JSON</h3><textarea id="importResultsText" style="flex:1;width:100%;box-sizing:border-box;font-family:monospace;font-size:12px;"></textarea><div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;"><button class="btn" id="cancelImportResults">取消</button><button class="btn" id="confirmImportResults">导入</button></div></div>';
-          document.body.appendChild(modal);
-          document.getElementById('cancelImportResults').onclick = function(){ modal.remove(); };
-          document.getElementById('confirmImportResults').onclick = function(){
-            try{
-              var raw = document.getElementById('importResultsText').value;
-              var parsed = JSON.parse(extractJsonText(raw));
-              var results = normalizeImportedResults(parsed);
-              var imported = 0;
-              results.forEach(function(result,index){
-                var id = result.id ?? result.index ?? result.questionId ?? result.no ?? index;
-                if(renderImportedResult(id,result)) imported++;
-              });
-              modal.remove();
-              window.Notification.success('已导入 '+imported+' 条解题结果');
-            }catch(error){
-              window.Notification.error('导入失败：'+(error?.message||String(error)));
-            }
-          };
-        }
-
         window.importSolveResults = function(){
-          openImportDialog();
+          if(window.YktPromptIO && typeof window.YktPromptIO.importSolveResults === "function") return window.YktPromptIO.importSolveResults();
+          window.Notification.error("导入模块未加载，请重新打开助手页");
         };
 
         // AI Logic

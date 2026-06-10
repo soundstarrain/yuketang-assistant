@@ -20,10 +20,10 @@ chrome.action.onClicked.addListener((tab) => {
     }
 
     if (url.includes('yuketang.cn') || url.includes('xuetangx.com')) {
-      // 先注入 content.js（如果还未注入）
+      // 先注入页面桥接和主入口（如果还未注入）
       chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
-        files: ['content.js']
+        files: ['answer_filler.js', 'content.js']
       }, () => {
         // 然后执行 init 函数
         chrome.scripting.executeScript({
