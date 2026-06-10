@@ -436,9 +436,22 @@
     return { filled, missed };
   }
 
+  function isFillableQuestionElement(el) {
+    return !!el?.querySelector('.item-body, .problem-body, .list-unstyled-radio, .list-unstyled-checkbox, input, textarea, iframe, [contenteditable="true"], .edui-editor');
+  }
+
+  function getVisibleQuestionElements() {
+    const exerciseItems = Array.from(document.querySelectorAll('.exercise-item'))
+      .filter(isFillableQuestionElement);
+    if (exerciseItems.length > 0) return exerciseItems;
+
+    return Array.from(document.querySelectorAll('.subject-item'))
+      .filter(isFillableQuestionElement)
+      .filter(el => !el.querySelector('.exercise-item'));
+  }
+
   async function fillVisibleQuestions(results) {
-    const questionEls = Array.from(document.querySelectorAll('.exercise-item, .subject-item'))
-      .filter(el => el.querySelector('.item-body, .problem-body, .list-unstyled-radio, .list-unstyled-checkbox, input, textarea, iframe, [contenteditable="true"], .edui-editor'));
+    const questionEls = getVisibleQuestionElements();
     let filled = 0;
     let missed = 0;
 
@@ -474,6 +487,7 @@
   window.YktAnswerFiller = {
     fillImportedResults,
     fillQuestion,
+    getVisibleQuestionElements,
     parseChoiceAnswer,
     getResultOrder
   };
