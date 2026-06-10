@@ -2750,6 +2750,11 @@
    */
   async function init() {
     try {
+      if (window.top !== window.self) {
+        console.log('ℹ️ 跳过 iframe 内的雨课堂助手初始化');
+        return;
+      }
+
       window.__YKT_EXTRACTOR_INITTED__ = true;
 
       console.log('开始初始化雨课堂考试助手...');

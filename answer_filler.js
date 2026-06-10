@@ -3,6 +3,7 @@
 (function () {
   'use strict';
 
+  if (window.top !== window.self) return;
   if (window.__YKT_ANSWER_FILLER__) return;
   window.__YKT_ANSWER_FILLER__ = true;
 
