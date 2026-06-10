@@ -44,3 +44,38 @@ chrome.action.onClicked.addListener((tab) => {
     console.error('执行脚本失败:', e);
   }
 });
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== 'YKT_FETCH_ARRAY_BUFFER' || !message.url) return false;
+
+  let url;
+  try {
+    url = new URL(message.url);
+    const allowedHost = /(^|\.)yuketang\.cn$/.test(url.hostname) || /(^|\.)xuetangx\.com$/.test(url.hostname);
+    const allowedFont = /\/exam_font_[^/]+\.(ttf|otf|woff2?|eot)$/i.test(url.pathname);
+    if (!allowedHost || !allowedFont) throw new Error('URL not allowed');
+  } catch (error) {
+    sendResponse({ ok: false, error: error.message || String(error) });
+    return false;
+  }
+
+  fetch(url.href)
+    .then(response => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.arrayBuffer();
+    })
+    .then(buffer => {
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      sendResponse({ ok: true, base64: btoa(binary) });
+    })
+    .catch(error => {
+      sendResponse({ ok: false, error: error.message || String(error) });
+    });
+
+  return true;
+});

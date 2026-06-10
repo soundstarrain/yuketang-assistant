@@ -705,6 +705,12 @@
      */
     async detect() {
       try {
+        if (this.isCloudStudentExercisePage()) {
+          const items = this.getCloudExerciseItems();
+          console.log(`✅ 检测到云作业练习页面，当前可见题目 ${items.length} 个`);
+          return { items, mode: 'cloudExercise', count: items.length || 1 };
+        }
+
         const config = await this.configManager.loadAppConfig();
         const selectors = [
           config.selectors.ppt,
@@ -745,6 +751,14 @@
         console.error('❌ 题目检测错误:', error);
         return { items: [], mode: null, count: 0 };
       }
+    }
+
+    isCloudStudentExercisePage() {
+      return /\/v2\/web\/cloud\/student\/exercise\//.test(window.location.pathname);
+    }
+
+    getCloudExerciseItems() {
+      return document.querySelectorAll('.container-problem .el-scrollbar__view > .subject-item');
     }
   }
 
@@ -913,6 +927,935 @@
 
       html = html.replace(/\s+/g, ' ').trim();
       return html;
+    }
+  }
+
+  /**
+   * 云作业练习页提取器
+   *
+   * 该页面左侧题号导航和右侧题目都使用 .subject-item，因此必须限定在
+   * .container-problem 内部，作为独立页面模式处理。
+   */
+  class CloudExerciseExtractor extends DataExtractor {
+    constructor(configManager) {
+      super(configManager);
+      this.switchDelay = 450;
+      this.maxWaitTime = 5000;
+      this.decryptMapPromise = null;
+      this.decryptMapInfo = null;
+    }
+
+    async extractAll() {
+      let orders = this.getNavOrders();
+      if (orders.length === 0) {
+        await this.ensureNavOrdersVisible();
+        orders = this.getNavOrders();
+      }
+
+      const cachedData = await this.extractFromCache();
+      if (this.isCacheComplete(cachedData, orders)) {
+        console.log(`✅ 从云作业缓存提取到 ${cachedData.length} 道题`);
+        return cachedData;
+      }
+
+      if (cachedData.length > 0) {
+        console.log(`ℹ️ 云作业缓存只有 ${cachedData.length} 道题，左侧题号共有 ${orders.length} 道，改为逐题点击加载`);
+      }
+
+      const originalOrder = this.getCurrentOrder();
+      const results = [];
+
+      if (orders.length === 0) {
+        const current = this.getCurrentQuestionElement();
+        return current ? [await this.extractQuestionData(current, 0)] : [];
+      }
+
+      for (let i = 0; i < orders.length; i++) {
+        const order = orders[i];
+
+        if (this.getCurrentOrder() !== order) {
+          const navItem = this.getNavItem(order);
+          if (!navItem) {
+            console.warn(`⚠️ 第 ${order} 题导航按钮不存在`);
+            continue;
+          }
+
+          const previousSignature = this.getQuestionSignature();
+          navItem.click();
+          await this.waitForQuestionOrder(order, previousSignature);
+        }
+
+        if (this.getCurrentOrder() !== order) {
+          console.warn(`⚠️ 第 ${order} 题切换失败，当前仍为第 ${this.getCurrentOrder() || '未知'} 题，已跳过`);
+          continue;
+        }
+
+        const current = this.getCurrentQuestionElement();
+        if (!current) {
+          console.warn(`⚠️ 第 ${order} 题未找到右侧题目容器`);
+          continue;
+        }
+
+        const data = await this.extractQuestionData(current, i);
+        data.meta = this.normalizeMeta(data.meta, order);
+        data.id = i;
+        data.order = order;
+        results.push(data);
+      }
+
+      if (originalOrder && this.getCurrentOrder() !== originalOrder) {
+        const originalNav = this.getNavItem(originalOrder);
+        if (originalNav) {
+          originalNav.click();
+        }
+      }
+
+      return results;
+    }
+
+    async ensureNavOrdersVisible() {
+      const expandButton = Array.from(document.querySelectorAll('.exam-aside .aside-header div'))
+        .find(node => /展开/.test(node.textContent || ''));
+
+      if (!expandButton) return;
+
+      expandButton.click();
+      await this.sleep(this.switchDelay);
+    }
+
+    isCacheComplete(cachedData, orders) {
+      if (!Array.isArray(cachedData) || cachedData.length === 0) return false;
+      if (!Array.isArray(orders) || orders.length === 0) return true;
+
+      const cachedOrders = new Set(cachedData.map(item => Number(item.order)).filter(Number.isFinite));
+      return orders.every(order => cachedOrders.has(Number(order)));
+    }
+
+    async extractFromCache() {
+      const cache = this.getExerciseCache();
+      const problems = cache?.problems;
+      if (!problems || typeof problems !== 'object') {
+        return [];
+      }
+
+      const entries = Object.values(problems)
+        .filter(item => item?.content && Number.isFinite(Number(item.index)))
+        .sort((a, b) => Number(a.index) - Number(b.index));
+
+      const results = [];
+      for (let i = 0; i < entries.length; i++) {
+        const problem = entries[i];
+        const content = problem.content || {};
+        const order = Number(problem.index) || i + 1;
+
+        results.push({
+          id: i,
+          order,
+          meta: this.buildCachedMeta(content, order),
+          body: await this.processCachedHtml(content.Body || ''),
+          options: await this.extractCachedOptions(content.Options || []),
+          images: this.extractImageUrlsFromHtml(content.Body || '')
+        });
+      }
+
+      return results;
+    }
+
+    getExerciseCache() {
+      const urlKeyPart = `${window.location.pathname.split('/').slice(-3).join('-')}${window.location.search}`;
+      const candidates = Object.keys(localStorage)
+        .filter(key => key.startsWith('cloud-student-exercise-') && key.includes(urlKeyPart));
+
+      if (candidates.length === 0) {
+        candidates.push(...Object.keys(localStorage).filter(key => key.startsWith('cloud-student-exercise-')));
+      }
+
+      for (const key of candidates) {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key));
+          if (parsed?.problems && typeof parsed.problems === 'object') {
+            return parsed;
+          }
+        } catch (error) {
+          console.warn(`⚠️ 云作业缓存解析失败: ${key}`, error);
+        }
+      }
+
+      return null;
+    }
+
+    buildCachedMeta(content, order) {
+      const typeText = content.TypeText || content.Type || '题目';
+      const score = content.Score ?? content.score;
+      return `${order}.${typeText}${score ? ` (${score}分)` : ''}`;
+    }
+
+    async processCachedHtml(html) {
+      if (!html) return '（题干提取失败）';
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = html;
+
+      const processed = await this.processContent(wrapper);
+      return processed || '（题干提取失败）';
+    }
+
+    async processContent(element) {
+      if (!element) return '';
+
+      const clone = element.cloneNode(true);
+      const hasEncryptedFontContent = clone.querySelector('.xuetangx-com-encrypted-font');
+      const decrypted = await this.decryptEncryptedFontContent(clone);
+
+      if (hasEncryptedFontContent && !decrypted) {
+        this.removeEncryptedFontContent(clone);
+        this.removeCjkTextNodes(clone);
+      }
+
+      return super.processContent(clone);
+    }
+
+    async extractCachedOptions(options) {
+      let optionsHtml = '<div class="q-options">';
+
+      if (!Array.isArray(options) || options.length === 0) {
+        optionsHtml += '<div style="color:#999; font-style:italic; font-size:12px;">[主观题]</div>';
+        optionsHtml += '</div>';
+        return optionsHtml;
+      }
+
+      for (let i = 0; i < options.length; i++) {
+        const option = options[i] || {};
+        const label = this.normalizeOptionLabel(option.key, i);
+        const fallbackContent = /^true$/i.test(String(option.key || '')) ? 'true' :
+          /^false$/i.test(String(option.key || '')) ? 'false' : '';
+        const content = option.value ? await this.processCachedHtml(option.value) : fallbackContent;
+
+        optionsHtml += `<div class="q-opt"><span class="q-opt-label">${label}.</span><div class="q-opt-content">${content === '（题干提取失败）' ? '' : content}</div></div>`;
+      }
+
+      optionsHtml += '</div>';
+      return optionsHtml;
+    }
+
+    normalizeOptionLabel(key, index) {
+      const normalized = String(key || '').trim();
+      if (/^true$/i.test(normalized)) return 'T';
+      if (/^false$/i.test(normalized)) return 'F';
+      return normalized || String.fromCharCode(65 + index);
+    }
+
+    removeEncryptedFontContent(root) {
+      root.querySelectorAll('.xuetangx-com-encrypted-font').forEach(node => {
+        const parent = node.parentElement;
+        node.remove();
+
+        if (parent && this.isEncryptedChineseOnly(parent.textContent)) {
+          parent.remove();
+        }
+      });
+
+      Array.from(root.querySelectorAll('p, div, span')).forEach(node => {
+        if (this.isEncryptedChineseOnly(node.textContent) && !node.querySelector('img')) {
+          node.remove();
+        }
+      });
+    }
+
+    removeCjkTextNodes(root) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+
+      while (walker.nextNode()) {
+        nodes.push(walker.currentNode);
+      }
+
+      nodes.forEach(node => {
+        node.nodeValue = node.nodeValue
+          .replace(/[\u3400-\u9fff]+/g, '')
+          .replace(/（\s*[，,、；;：:\s]*\s*）/g, '')
+          .replace(/\(\s*[，,、；;：:\s]*\s*\)/g, '');
+      });
+
+      Array.from(root.querySelectorAll('p, div, span')).forEach(node => {
+        if (!node.querySelector('img') && !node.textContent.replace(/\s|\u00a0/g, '')) {
+          node.remove();
+        }
+      });
+    }
+
+    isEncryptedChineseOnly(text) {
+      const clean = String(text || '')
+        .replace(/[\s\u00a0，。、“”‘’；：！？,.!?:;()（）\-—_]/g, '');
+
+      if (!clean) return false;
+      if (/[A-Za-z0-9]/.test(clean)) return false;
+
+      const cjkCount = (clean.match(/[\u3400-\u9fff]/g) || []).length;
+      return cjkCount > 0 && cjkCount / clean.length > 0.8;
+    }
+
+    async decryptEncryptedFontContent(root) {
+      const encryptedNodes = Array.from(root.querySelectorAll('.xuetangx-com-encrypted-font'));
+      if (encryptedNodes.length === 0) return true;
+
+      const decryptMap = await this.getEncryptedFontMap();
+      if (!decryptMap) return false;
+
+      const unknownChars = new Set();
+      encryptedNodes.forEach(node => {
+        node.textContent = Array.from(node.textContent || '').map(ch => {
+          if (decryptMap[ch]) return decryptMap[ch];
+          if (/[\u3400-\u9fff]/.test(ch)) unknownChars.add(ch);
+          return ch;
+        }).join('');
+        node.classList.remove('xuetangx-com-encrypted-font');
+        node.style.fontFamily = '';
+      });
+
+      if (unknownChars.size > 0) {
+        console.warn(`⚠️ 加密字体映射缺少 ${unknownChars.size} 个字符: ${Array.from(unknownChars).join('')}`);
+      }
+
+      return true;
+    }
+
+    async getEncryptedFontMap() {
+      if (this.decryptMapPromise) return this.decryptMapPromise;
+
+      this.decryptMapPromise = (async () => {
+        const fontUrl = this.detectEncryptedFontUrl();
+        const mapNames = this.getFontMapCandidates(fontUrl);
+        const storedMap = await this.getStoredEncryptedFontMap(mapNames);
+        if (storedMap) return storedMap;
+
+        for (const mapName of mapNames) {
+          try {
+            const mapUrl = typeof chrome !== 'undefined' && chrome.runtime?.getURL
+              ? chrome.runtime.getURL(`font_maps/${mapName}.json`)
+              : '';
+            if (!mapUrl) continue;
+
+            const response = await fetch(mapUrl);
+            if (!response.ok) continue;
+
+            const payload = await response.json();
+            const map = payload?.mappings || payload?.map || null;
+            if (map && typeof map === 'object') {
+              this.decryptMapInfo = {
+                mapName,
+                count: Object.keys(map).length,
+                fontUrl
+              };
+              console.log(`✅ 已加载加密字体映射 ${mapName}，共 ${this.decryptMapInfo.count} 字`);
+              return map;
+            }
+          } catch (error) {
+            console.warn(`⚠️ 加密字体映射加载失败: ${mapName}`, error);
+          }
+        }
+
+        const generatedMap = await this.generateEncryptedFontMap(fontUrl, mapNames);
+        if (generatedMap) return generatedMap;
+
+        console.warn('⚠️ 未找到当前页面加密字体映射，将隐藏加密中文译文');
+        return null;
+      })();
+
+      return this.decryptMapPromise;
+    }
+
+    async getStoredEncryptedFontMap(mapNames) {
+      const readMapPayload = payload => {
+        if (!payload || typeof payload !== 'object') return null;
+        const map = payload.mappings || payload.map || payload;
+        return map && typeof map === 'object' ? map : null;
+      };
+
+      for (const mapName of mapNames) {
+        try {
+          const direct = localStorage.getItem(`ykt-font-map-${mapName}`);
+          const directMap = readMapPayload(direct ? JSON.parse(direct) : null);
+          if (directMap) {
+            console.log(`✅ 已从页面 localStorage 加载加密字体映射 ${mapName}`);
+            return directMap;
+          }
+        } catch (error) {
+          console.warn(`⚠️ 页面 localStorage 字体映射解析失败: ${mapName}`, error);
+        }
+      }
+
+      try {
+        const bundle = localStorage.getItem('ykt-font-maps');
+        const parsed = bundle ? JSON.parse(bundle) : null;
+        for (const mapName of mapNames) {
+          const map = readMapPayload(parsed?.[mapName]);
+          if (map) {
+            console.log(`✅ 已从页面 localStorage 映射包加载加密字体映射 ${mapName}`);
+            return map;
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ 页面 localStorage 字体映射包解析失败', error);
+      }
+
+      if (typeof chrome === 'undefined' || !chrome.storage?.local) return null;
+
+      try {
+        const storage = await new Promise(resolve => {
+          chrome.storage.local.get(['fontDecryptMaps'], result => resolve(result || {}));
+        });
+        const maps = storage.fontDecryptMaps || {};
+        for (const mapName of mapNames) {
+          const map = readMapPayload(maps[mapName]);
+          if (map) {
+            console.log(`✅ 已从扩展 storage 加载加密字体映射 ${mapName}`);
+            return map;
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ 扩展 storage 字体映射读取失败', error);
+      }
+
+      return null;
+    }
+
+    async generateEncryptedFontMap(fontUrl, mapNames) {
+      if (!fontUrl || typeof FontFace === 'undefined') return null;
+
+      try {
+        console.log(`ℹ️ 正在自动生成加密字体映射: ${fontUrl}`);
+        const fontBuffer = await this.fetchFontArrayBuffer(fontUrl);
+        const encryptedChars = this.parseCmapChars(fontBuffer);
+        if (encryptedChars.length === 0) {
+          console.warn('⚠️ 当前加密字体 cmap 未解析到中文码位');
+          return null;
+        }
+
+        const encryptedFamily = `ykt-auto-decrypt-${Date.now()}`;
+        const referenceFamily = await this.ensureReferenceFontLoaded();
+        await this.loadFontFace(encryptedFamily, fontBuffer.slice(0));
+
+        const map = await this.buildGlyphMatchMap(encryptedChars, encryptedFamily, referenceFamily);
+        if (!map || Object.keys(map).length === 0) return null;
+
+        await this.storeGeneratedFontMap(mapNames[0], map, {
+          fontUrl,
+          count: Object.keys(map).length,
+          generatedAt: new Date().toISOString()
+        });
+
+        console.log(`✅ 自动生成加密字体映射 ${mapNames[0] || ''}，共 ${Object.keys(map).length} 字`);
+        return map;
+      } catch (error) {
+        console.warn('⚠️ 自动生成加密字体映射失败', error);
+        return null;
+      }
+    }
+
+    async fetchFontArrayBuffer(fontUrl) {
+      try {
+        const response = await fetch(fontUrl);
+        if (response.ok) return response.arrayBuffer();
+      } catch (error) {
+        console.warn('⚠️ 页面直接读取字体失败，尝试后台读取', error);
+      }
+
+      if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+        throw new Error('无法读取字体文件');
+      }
+
+      const result = await new Promise(resolve => {
+        chrome.runtime.sendMessage({ type: 'YKT_FETCH_ARRAY_BUFFER', url: fontUrl }, resolve);
+      });
+
+      if (!result?.ok || !result.base64) {
+        throw new Error(result?.error || '后台读取字体失败');
+      }
+
+      return this.base64ToArrayBuffer(result.base64);
+    }
+
+    base64ToArrayBuffer(base64) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    async ensureReferenceFontLoaded() {
+      const family = 'YKTSourceHanSansSCVF';
+      if (document.fonts?.check?.(`16px "${family}"`)) return family;
+
+      const fontUrl = typeof chrome !== 'undefined' && chrome.runtime?.getURL
+        ? chrome.runtime.getURL('libs/fonts/SourceHanSansSC-VF.ttf')
+        : '';
+      if (!fontUrl) throw new Error('参考字体路径不可用');
+
+      await this.loadFontFace(family, `url("${fontUrl}")`);
+      return family;
+    }
+
+    async loadFontFace(family, source) {
+      const face = new FontFace(family, source);
+      await face.load();
+      document.fonts.add(face);
+      await document.fonts.ready;
+      return family;
+    }
+
+    parseCmapChars(fontBuffer) {
+      const data = new DataView(fontBuffer);
+      const readTag = offset => String.fromCharCode(
+        data.getUint8(offset),
+        data.getUint8(offset + 1),
+        data.getUint8(offset + 2),
+        data.getUint8(offset + 3)
+      );
+      const numTables = data.getUint16(4);
+      let cmapOffset = 0;
+
+      for (let i = 0; i < numTables; i++) {
+        const offset = 12 + i * 16;
+        if (readTag(offset) === 'cmap') {
+          cmapOffset = data.getUint32(offset + 8);
+          break;
+        }
+      }
+
+      if (!cmapOffset) return [];
+
+      const subtableCount = data.getUint16(cmapOffset + 2);
+      const subtables = [];
+      for (let i = 0; i < subtableCount; i++) {
+        const record = cmapOffset + 4 + i * 8;
+        const platform = data.getUint16(record);
+        const encoding = data.getUint16(record + 2);
+        const offset = cmapOffset + data.getUint32(record + 4);
+        const format = data.getUint16(offset);
+        subtables.push({ platform, encoding, offset, format });
+      }
+
+      const preferred = subtables.find(t => t.format === 12 && t.platform === 3) ||
+        subtables.find(t => t.format === 4 && t.platform === 3) ||
+        subtables.find(t => t.format === 12) ||
+        subtables.find(t => t.format === 4);
+
+      if (!preferred) return [];
+      const chars = preferred.format === 12
+        ? this.parseCmapFormat12(data, preferred.offset)
+        : this.parseCmapFormat4(data, preferred.offset);
+
+      return [...new Set(chars)]
+        .filter(ch => /[\u3400-\u9fff]/.test(ch))
+        .sort((a, b) => a.codePointAt(0) - b.codePointAt(0));
+    }
+
+    parseCmapFormat12(data, offset) {
+      const chars = [];
+      const groupCount = data.getUint32(offset + 12);
+      for (let i = 0; i < groupCount; i++) {
+        const group = offset + 16 + i * 12;
+        const start = data.getUint32(group);
+        const end = data.getUint32(group + 4);
+        for (let cp = start; cp <= end; cp++) {
+          if (cp >= 0x3400 && cp <= 0x9fff) chars.push(String.fromCodePoint(cp));
+        }
+      }
+      return chars;
+    }
+
+    parseCmapFormat4(data, offset) {
+      const chars = [];
+      const segCount = data.getUint16(offset + 6) / 2;
+      const endCodeOffset = offset + 14;
+      const startCodeOffset = endCodeOffset + segCount * 2 + 2;
+      const idDeltaOffset = startCodeOffset + segCount * 2;
+      const idRangeOffsetOffset = idDeltaOffset + segCount * 2;
+
+      for (let i = 0; i < segCount; i++) {
+        const end = data.getUint16(endCodeOffset + i * 2);
+        const start = data.getUint16(startCodeOffset + i * 2);
+        const delta = data.getInt16(idDeltaOffset + i * 2);
+        const rangeOffset = data.getUint16(idRangeOffsetOffset + i * 2);
+
+        for (let cp = start; cp <= end && cp !== 0xffff; cp++) {
+          if (cp < 0x3400 || cp > 0x9fff) continue;
+
+          let glyphId = 0;
+          if (rangeOffset === 0) {
+            glyphId = (cp + delta) & 0xffff;
+          } else {
+            const glyphOffset = idRangeOffsetOffset + i * 2 + rangeOffset + (cp - start) * 2;
+            if (glyphOffset + 1 < data.byteLength) {
+              glyphId = data.getUint16(glyphOffset);
+              if (glyphId !== 0) glyphId = (glyphId + delta) & 0xffff;
+            }
+          }
+
+          if (glyphId !== 0) chars.push(String.fromCharCode(cp));
+        }
+      }
+
+      return chars;
+    }
+
+    async buildGlyphMatchMap(chars, encryptedFamily, referenceFamily) {
+      const vectorSize = 24;
+      const refs = [];
+      const refsByHash = new Map();
+
+      for (const ch of chars) {
+        const vector = this.renderGlyphVector(ch, referenceFamily, vectorSize);
+        if (!vector) continue;
+
+        const ref = { ch, vector };
+        refs.push(ref);
+
+        const hash = this.glyphVectorHash(vector);
+        if (refsByHash.has(hash)) {
+          refsByHash.set(hash, null);
+        } else {
+          refsByHash.set(hash, ref);
+        }
+      }
+
+      const map = {};
+      const confidence = {};
+      for (let index = 0; index < chars.length; index++) {
+        const ch = chars[index];
+        if (index > 0 && index % 40 === 0) await this.sleep(0);
+
+        const query = this.renderGlyphVector(ch, encryptedFamily, vectorSize);
+        if (!query) continue;
+
+        const hashedRef = refsByHash.get(this.glyphVectorHash(query));
+        if (hashedRef) {
+          map[ch] = hashedRef.ch;
+          confidence[ch] = 1;
+          continue;
+        }
+
+        let best = null;
+        let second = null;
+        for (const ref of refs) {
+          const distance = this.glyphDistance(query, ref.vector);
+          if (!best || distance < best.distance) {
+            second = best;
+            best = { ch: ref.ch, distance };
+          } else if (!second || distance < second.distance) {
+            second = { ch: ref.ch, distance };
+          }
+        }
+
+        if (best) {
+          map[ch] = best.ch;
+          confidence[ch] = second
+            ? Math.min(Math.max((second.distance - best.distance) / Math.max(best.distance, 1), 0), 1)
+            : 1;
+        }
+      }
+
+      map.__confidence = confidence;
+      return map;
+    }
+
+    renderGlyphVector(ch, fontFamily, vectorSize) {
+      const canvasSize = 128;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvasSize;
+      canvas.height = canvasSize;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return null;
+
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvasSize, canvasSize);
+      ctx.fillStyle = '#000';
+      ctx.font = `96px "${fontFamily}"`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ch, canvasSize / 2, canvasSize / 2);
+
+      const image = ctx.getImageData(0, 0, canvasSize, canvasSize).data;
+      let minX = canvasSize;
+      let minY = canvasSize;
+      let maxX = -1;
+      let maxY = -1;
+
+      for (let y = 0; y < canvasSize; y++) {
+        for (let x = 0; x < canvasSize; x++) {
+          const index = (y * canvasSize + x) * 4;
+          const value = image[index] + image[index + 1] + image[index + 2];
+          if (image[index + 3] > 0 && value < 735) {
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+      }
+
+      if (maxX < minX || maxY < minY) return null;
+
+      const normalized = document.createElement('canvas');
+      normalized.width = vectorSize;
+      normalized.height = vectorSize;
+      const nctx = normalized.getContext('2d', { willReadFrequently: true });
+      nctx.fillStyle = '#fff';
+      nctx.fillRect(0, 0, vectorSize, vectorSize);
+      nctx.drawImage(
+        canvas,
+        minX,
+        minY,
+        maxX - minX + 1,
+        maxY - minY + 1,
+        0,
+        0,
+        vectorSize,
+        vectorSize
+      );
+
+      const normalizedImage = nctx.getImageData(0, 0, vectorSize, vectorSize).data;
+      const vector = new Uint8Array(vectorSize * vectorSize);
+      for (let i = 0; i < vector.length; i++) {
+        const index = i * 4;
+        const value = normalizedImage[index] + normalizedImage[index + 1] + normalizedImage[index + 2];
+        vector[i] = value < 600 ? 1 : 0;
+      }
+      return vector;
+    }
+
+    glyphVectorHash(vector) {
+      let hash = '';
+      for (let i = 0; i < vector.length; i += 6) {
+        let value = 0;
+        for (let bit = 0; bit < 6 && i + bit < vector.length; bit++) {
+          value = (value << 1) | vector[i + bit];
+        }
+        hash += value.toString(36).padStart(2, '0');
+      }
+      return hash;
+    }
+
+    glyphDistance(a, b) {
+      let distance = 0;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) distance++;
+      }
+      return distance;
+    }
+
+    async storeGeneratedFontMap(mapName, map, metadata) {
+      if (!mapName) return;
+
+      const confidence = map.__confidence || {};
+      delete map.__confidence;
+      const payload = { ...metadata, mappings: map, confidence };
+
+      try {
+        localStorage.setItem(`ykt-font-map-${mapName}`, JSON.stringify(payload));
+      } catch (error) {
+        console.warn('⚠️ 页面 localStorage 写入字体映射失败', error);
+      }
+
+      if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+
+      try {
+        const storage = await new Promise(resolve => {
+          chrome.storage.local.get(['fontDecryptMaps'], result => resolve(result || {}));
+        });
+        const maps = storage.fontDecryptMaps || {};
+        maps[mapName] = payload;
+        await new Promise(resolve => {
+          chrome.storage.local.set({ fontDecryptMaps: maps }, resolve);
+        });
+      } catch (error) {
+        console.warn('⚠️ 扩展 storage 写入字体映射失败', error);
+      }
+    }
+
+    getFontMapCandidates(fontUrl) {
+      const candidates = [];
+      const push = value => {
+        if (value && !candidates.includes(value)) candidates.push(value);
+      };
+
+      if (fontUrl) {
+        const cleanUrl = fontUrl.split(/[?#]/)[0];
+        const fileName = cleanUrl.split('/').pop() || '';
+        push(fileName.replace(/\.(ttf|otf|woff2?|eot)$/i, ''));
+
+        const productMatch = cleanUrl.match(/\/([^/]*exam_font_[^/.]+)\.(?:ttf|otf|woff2?|eot)$/i);
+        if (productMatch) push(productMatch[1]);
+      }
+
+      return candidates;
+    }
+
+    detectEncryptedFontUrl() {
+      const resource = performance.getEntriesByType?.('resource')
+        ?.map(entry => entry.name)
+        ?.find(name => /\/fe_font\/product\/exam_font_[^/]+\.(?:ttf|otf|woff2?|eot)(?:[?#].*)?$/i.test(name));
+
+      if (resource) return resource;
+
+      for (const sheet of Array.from(document.styleSheets || [])) {
+        let rules = [];
+        try {
+          rules = Array.from(sheet.cssRules || []);
+        } catch (error) {
+          continue;
+        }
+
+        for (const rule of rules) {
+          const text = rule.cssText || '';
+          if (!/exam-data-decrypt-font|xuetangx-com-encrypted-font|exam_font_/i.test(text)) continue;
+
+          const match = text.match(/url\(["']?([^"')]+exam_font_[^"')]+\.(?:ttf|otf|woff2?|eot)(?:[?#][^"')]+)?)["']?\)/i);
+          if (match) return new URL(match[1], window.location.href).href;
+        }
+      }
+
+      const htmlMatch = document.documentElement.innerHTML.match(/https?:\/\/[^"')]+exam_font_[^"')]+\.(?:ttf|otf|woff2?|eot)/i);
+      return htmlMatch ? htmlMatch[0] : '';
+    }
+
+    extractImageUrlsFromHtml(html) {
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = html || '';
+      return Array.from(wrapper.querySelectorAll('img'))
+        .map(img => img.getAttribute('src'))
+        .filter(Boolean);
+    }
+
+    getNavOrders() {
+      return this.getNavItems()
+        .map(item => Number(item.dataset.order))
+        .filter(order => Number.isFinite(order))
+        .sort((a, b) => a - b);
+    }
+
+    getNavItems() {
+      return Array.from(document.querySelectorAll('.exam-aside .J_order[data-order]'))
+        .sort((a, b) => Number(a.dataset.order) - Number(b.dataset.order));
+    }
+
+    getNavItem(order) {
+      return document.querySelector(`.exam-aside .J_order[data-order="${order}"]`);
+    }
+
+    getCurrentOrder() {
+      const typeNode = this.getCurrentQuestionElement()?.querySelector('.item-type');
+      const match = typeNode?.innerText.match(/^\s*(\d+)/);
+      if (match) return Number(match[1]);
+
+      const active = document.querySelector('.exam-aside .J_order.active[data-order]');
+      return active ? Number(active.dataset.order) : null;
+    }
+
+    getCurrentQuestionElement() {
+      return document.querySelector('.container-problem .el-scrollbar__view > .subject-item');
+    }
+
+    getQuestionSignature() {
+      const current = this.getCurrentQuestionElement();
+      if (!current) return '';
+
+      const meta = current.querySelector('.item-type')?.innerText || '';
+      const body = current.querySelector('.problem-body, .item-body')?.innerText || '';
+      return `${meta} ${body}`.replace(/\s+/g, ' ').trim();
+    }
+
+    async waitForQuestionOrder(order, previousSignature = '') {
+      const start = Date.now();
+
+      while (Date.now() - start < this.maxWaitTime) {
+        await this.sleep(this.switchDelay);
+        const signature = this.getQuestionSignature();
+        if (this.getCurrentOrder() === order && signature && signature !== previousSignature) {
+          return true;
+        }
+      }
+
+      console.warn(`⚠️ 等待第 ${order} 题渲染超时，尝试提取当前题`);
+      return false;
+    }
+
+    sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    normalizeMeta(meta, order) {
+      const cleanMeta = String(meta || '').replace(/\s+/g, ' ').trim();
+      if (!cleanMeta || /^题\s+\d+$/.test(cleanMeta)) {
+        return `题 ${order}`;
+      }
+      return cleanMeta;
+    }
+
+    async extractBody(questionElement) {
+      const bodyNode = questionElement.querySelector('.problem-body .custom_ueditor_cn_body, .problem-body');
+      if (bodyNode) {
+        return this.processContent(bodyNode);
+      }
+
+      const itemBody = questionElement.querySelector('.item-body');
+      if (itemBody) {
+        const clone = itemBody.cloneNode(true);
+        clone.querySelectorAll([
+          '.list-unstyled-radio',
+          '.list-unstyled-checkbox',
+          '.el-radio',
+          '.el-checkbox',
+          '.el-input',
+          '.el-textarea',
+          'input',
+          'textarea',
+          'select'
+        ].join(', ')).forEach(node => node.remove());
+
+        const text = clone.innerText.replace(/\s+/g, ' ').trim();
+        if (text || clone.querySelector('img')) {
+          return this.processContent(clone);
+        }
+      }
+
+      return super.extractBody(questionElement);
+    }
+
+    async extractOptions(questionElement) {
+      let optionsHtml = '<div class="q-options">';
+      const optionItems = questionElement.querySelectorAll(
+        '.list-unstyled-radio > li, .list-unstyled-checkbox > li'
+      );
+
+      if (optionItems.length === 0) {
+        return super.extractOptions(questionElement);
+      }
+
+      for (const optItem of optionItems) {
+        const inputNode = optItem.querySelector('.radioInput, .checkboxInput');
+        const textNode = optItem.querySelector('.radioText, .checkboxText');
+        const valueNode = optItem.querySelector('input[value]');
+        const labelText = (inputNode?.innerText || valueNode?.value || '').trim();
+        const label = labelText.charAt(0) || labelText;
+        let content = '';
+
+        if (textNode) {
+          content = await this.processContent(textNode);
+        } else {
+          content = optItem.innerText.replace(labelText, '').trim();
+        }
+
+        if (label || content) {
+          optionsHtml += `<div class="q-opt"><span class="q-opt-label">${label}.</span><div class="q-opt-content">${content}</div></div>`;
+        }
+      }
+
+      optionsHtml += '</div>';
+      return optionsHtml;
     }
   }
 
@@ -1165,10 +2108,11 @@
       this.layoutManager = features.layoutManager;
       this.extractor = features.extractor;
       this.aiConfig = aiConfig;
+      this.extractedData = features.extractedData || null;
     }
 
     async render() {
-      let extractedData = null;
+      let extractedData = this.extractedData;
       if (this.extractor) {
         extractedData = [];
         for (let i = 0; i < this.items.length; i++) {
@@ -1182,10 +2126,11 @@
     }
 
     buildHTML(extractedData) {
+      const questionCount = Array.isArray(extractedData) ? extractedData.length : this.items.length;
       const head = `
         <head>
             <meta charset="utf-8">
-            <title>${this.config.app.name} - 共${this.items.length}题</title>
+            <title>${this.config.app.name} - 共${questionCount}题</title>
             <link rel="stylesheet" href="${chrome.runtime.getURL('libs/katex.min.css')}">
             <link rel="stylesheet" href="${chrome.runtime.getURL('libs/prism-tomorrow.min.css')}">
             <style>${this.getStyles()}</style>
@@ -1235,15 +2180,17 @@
         buttonsHtml += `<button class="btn" onclick="${btn.action}">${btn.label}</button>`;
       }
 
-      return `<div class="toolbar"><div class="toolbar-info">${this.config.app.name} - 共 ${this.items.length} 题</div><div class="toolbar-buttons">${buttonsHtml}</div></div>`;
+      const questionCount = Array.isArray(this.extractedData) ? this.extractedData.length : this.items.length;
+      return `<div class="toolbar"><div class="toolbar-info">${this.config.app.name} - 共 ${questionCount} 题</div><div class="toolbar-buttons">${buttonsHtml}</div></div>`;
     }
 
     buildQuestions(extractedData) {
       let questionsHtml = '';
-      const useExtracted = Array.isArray(extractedData) && extractedData.length === this.items.length;
+      const useExtracted = Array.isArray(extractedData);
+      const source = useExtracted ? extractedData : Array.from(this.items);
 
-      this.items.forEach((item, index) => {
-        const data = useExtracted ? extractedData[index] : this.extractQuestionDataFallback(item, index);
+      source.forEach((item, index) => {
+        const data = useExtracted ? item : this.extractQuestionDataFallback(item, index);
         questionsHtml += `<div class=\"q-item\" data-index=\"${index}\"><div class=\"q-meta\">${data.meta}</div><div class=\"q-body\">${data.body}</div>${data.options}<div class=\"ai-tools\"><button class=\"ai-btn\" onclick=\"window.aiSolveOne(${index})\">AI解答</button></div></div>`;
       });
 
@@ -1779,6 +2726,23 @@
       if (mode === 'ppt') {
         const extractor = new DataExtractor(configManager);
         const renderer = new PPTRenderer(items, config);
+        renderer.render();
+      } else if (mode === 'cloudExercise') {
+        const extractor = new CloudExerciseExtractor(configManager);
+        const extractedData = await extractor.extractAll();
+
+        if (extractedData.length === 0) {
+          console.warn('⚠️ 云作业练习页面未提取到题目');
+          return;
+        }
+
+        const aiConfig = await new Promise(resolve => chrome.storage.local.get(['aiConfig'], res => resolve(res.aiConfig || {})));
+        const renderer = new QuestionRenderer([], config, {
+          aiSolver: null,
+          layoutManager: null,
+          extractor: null,
+          extractedData
+        }, aiConfig);
         renderer.render();
       } else if (mode === 'question') {
         const extractor = new DataExtractor(configManager);

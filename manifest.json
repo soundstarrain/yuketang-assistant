@@ -72,7 +72,8 @@
         "libs/prism-tomorrow.min.css",
         "libs/auto-render.min.js",
         "libs/components/*",
-        "libs/fonts/*"
+        "libs/fonts/*",
+        "font_maps/*"
       ],
       "matches": [
         "<all_urls>"
