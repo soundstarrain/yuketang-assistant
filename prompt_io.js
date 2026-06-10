@@ -27,6 +27,7 @@
       return {
         id: index,
         meta: item.querySelector('.q-meta')?.innerText.trim() || '',
+        type: inferQuestionType(item),
         body: item.querySelector('.q-body')?.innerText.trim() || '',
         options,
         images: Array.from(item.querySelectorAll('img')).map((img, imgIndex) => ({
@@ -35,6 +36,17 @@
         }))
       };
     });
+  }
+
+  function inferQuestionType(item) {
+    const meta = item.querySelector('.q-meta')?.innerText || '';
+    const text = item.innerText || '';
+    if (/主观题|问答题|简答题|论述题|分析题|作文题/.test(meta + text)) return 'subjective';
+    if (/填空题/.test(meta + text)) return 'blank';
+    if (/判断题/.test(meta + text)) return 'judgement';
+    if (/多选题/.test(meta + text)) return 'multiple_choice';
+    if (/单选题/.test(meta + text)) return 'single_choice';
+    return 'unknown';
   }
 
   function blobToDataUrl(blob) {
@@ -133,8 +145,8 @@
       results: [
         {
           id: 0,
-          answer: '答案内容；选择题使用选项字母，如 A 或 A,B；判断题使用 T/F；填空题按空依次给出',
-          solution: '简洁清晰的解题过程，支持 Markdown/KaTeX'
+          answer: '选择题填选项字母，如 A 或 A,B；判断题填 T/F；填空题按空依次给出；主观题填可直接粘贴到答题框的完整答案纯文本',
+          solution: '解析或补充说明。主观题这里也请给可直接粘贴的纯文本答案，不要 Markdown'
         }
       ]
     };
@@ -145,6 +157,12 @@
       '必须严格只返回一个 JSON 对象，不要使用 Markdown 代码块，不要添加解释性前后缀。',
       '返回格式必须符合以下 schema：',
       JSON.stringify(schema, null, 2),
+      '填写规则：',
+      '1. 单选题/多选题：answer 只写选项字母，例如 "A" 或 "A,C"。',
+      '2. 判断题：answer 只写 "T" 或 "F"。',
+      '3. 填空题：answer 按空依次给出，多个空用空格分隔。',
+      '4. 主观题：answer 必须是能直接粘贴进雨课堂富文本答题框的完整纯文本答案；solution 也使用同一份纯文本或简短补充。不要 Markdown 标题、项目符号、代码块、加粗标记或 LaTeX 包裹符号。',
+      '5. 主观题排版：按正常手打答案分段；每个要点一段，段间用换行；不要写“答案如下”“解析如下”等前缀。',
       '题目数据如下，images[].dataUrl 为图片的 base64 data URL：',
       JSON.stringify(payload, null, 2),
       '再次确认：只返回 JSON，格式为 {"results":[{"id":题目id,"answer":"...","solution":"..."}]}。results 必须覆盖全部题目。'

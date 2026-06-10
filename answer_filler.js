@@ -56,6 +56,15 @@
     return Array.isArray(answer) ? answer.join(' ') : String(answer || '').trim();
   }
 
+  function getResultSolution(result) {
+    const solution = result?.solution ?? result?.explanation ?? result?.reason ?? '';
+    return Array.isArray(solution) ? solution.join('\n') : String(solution || '').trim();
+  }
+
+  function isPlaceholderAnswer(answer) {
+    return /^(参考解析|见解析|解析如下|主观题|略|无|答案见解析)$/i.test(String(answer || '').trim());
+  }
+
   function getResultOrder(result, fallbackIndex) {
     const explicit = result?.order ?? result?.no ?? result?.number;
     if (Number.isFinite(Number(explicit)) && Number(explicit) > 0) return Number(explicit);
@@ -215,11 +224,148 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  function isSubjectiveQuestion(questionEl) {
+    const text = questionEl?.querySelector('.item-type')?.innerText || questionEl?.innerText || '';
+    return /主观题|问答题|简答题|论述题|分析题|作文题/.test(text) ||
+      !!questionEl?.querySelector('iframe, [contenteditable="true"], .edui-editor, .ueditor, .ueditor-content');
+  }
+
+  function getFillText(questionEl, result) {
+    const answer = getResultAnswer(result);
+    if (!isSubjectiveQuestion(questionEl)) return answer;
+
+    const direct = result?.fillText ?? result?.subjectiveAnswer ?? result?.textAnswer;
+    if (direct) return String(direct).trim();
+    if (answer && !isPlaceholderAnswer(answer)) return answer;
+    return getResultSolution(result) || answer;
+  }
+
+  function plainTextToEditorHtml(text) {
+    const escapeHtml = value => String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    const paragraphs = String(text || '')
+      .replace(/\r\n/g, '\n')
+      .split(/\n{2,}/)
+      .map(part => part.trim())
+      .filter(Boolean);
+
+    if (paragraphs.length === 0) return '<p><br></p>';
+
+    return paragraphs.map(part => {
+      const lines = part.split(/\n/).map(line => escapeHtml(line.trim())).filter(Boolean);
+      return `<p>${lines.join('<br>')}</p>`;
+    }).join('');
+  }
+
+  function dispatchEditorEvents(node) {
+    ['input', 'change', 'keyup', 'blur'].forEach(type => {
+      node.dispatchEvent(new Event(type, { bubbles: true }));
+    });
+  }
+
+  function setContentEditableValue(editable, text) {
+    editable.focus();
+    editable.innerHTML = plainTextToEditorHtml(text);
+    dispatchEditorEvents(editable);
+  }
+
+  function setIframeEditorValue(iframe, text) {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc?.body) return false;
+
+    doc.body.focus();
+    doc.body.innerHTML = plainTextToEditorHtml(text);
+    dispatchEditorEvents(doc.body);
+    iframe.dispatchEvent(new Event('load', { bubbles: true }));
+    iframe.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
+
+  function syncHiddenEditorFields(questionEl, text) {
+    const html = plainTextToEditorHtml(text);
+    const fields = Array.from(questionEl.querySelectorAll('textarea, input[type="hidden"]'))
+      .filter(field => /ueditor|editor|answer|content|subject/i.test([
+        field.id,
+        field.name,
+        field.className
+      ].join(' ')));
+
+    fields.forEach(field => {
+      const value = field.tagName === 'TEXTAREA' ? text : html;
+      if ('value' in field) {
+        field.value = value;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+  }
+
+  function syncUEditorInstances(questionEl, text) {
+    const html = plainTextToEditorHtml(text);
+    const editorIds = Array.from(questionEl.querySelectorAll('[id]'))
+      .map(node => node.id)
+      .filter(id => /editor|ueditor/i.test(id));
+
+    if (!window.UE?.getEditor) return 0;
+
+    let changed = 0;
+    editorIds.forEach(id => {
+      try {
+        const editor = window.UE.getEditor(id);
+        if (editor?.setContent) {
+          editor.setContent(html);
+          changed++;
+        }
+      } catch (error) {
+        // UEditor throws if the id is not a registered editor; ignore and keep DOM fallback.
+      }
+    });
+
+    return changed;
+  }
+
+  function fillRichTextEditor(questionEl, text) {
+    if (!text) return false;
+
+    const editables = Array.from(questionEl.querySelectorAll('[contenteditable="true"]'))
+      .filter(node => !node.closest('.edui-toolbar'));
+    const iframes = Array.from(questionEl.querySelectorAll('iframe'))
+      .filter(iframe => {
+        try {
+          return !!(iframe.contentDocument || iframe.contentWindow?.document)?.body;
+        } catch (error) {
+          return false;
+        }
+      });
+
+    let changed = 0;
+
+    editables.forEach(editable => {
+      setContentEditableValue(editable, text);
+      changed++;
+    });
+
+    iframes.forEach(iframe => {
+      if (setIframeEditorValue(iframe, text)) changed++;
+    });
+
+    if (changed > 0) {
+      syncHiddenEditorFields(questionEl, text);
+      syncUEditorInstances(questionEl, text);
+    }
+
+    return changed > 0;
+  }
+
   function fillBlanks(questionEl, answer) {
     const inputs = Array.from(questionEl.querySelectorAll('textarea, input'))
       .filter(input => !/^(radio|checkbox|hidden|button|submit|reset)$/i.test(input.type || ''));
 
-    const editables = Array.from(questionEl.querySelectorAll('[contenteditable="true"]'));
+    const editables = Array.from(questionEl.querySelectorAll('[contenteditable="true"]'))
+      .filter(node => !node.closest('.edui-toolbar'));
     if (inputs.length === 0 && editables.length === 0) return false;
 
     const parts = splitBlankAnswer(answer, inputs.length || editables.length);
@@ -233,9 +379,7 @@
 
     editables.forEach((editable, index) => {
       const value = parts[index] ?? parts[0] ?? '';
-      editable.textContent = value;
-      editable.dispatchEvent(new Event('input', { bubbles: true }));
-      editable.dispatchEvent(new Event('change', { bubbles: true }));
+      setContentEditableValue(editable, value);
       changed++;
     });
 
@@ -245,10 +389,11 @@
   function fillQuestion(questionEl, result) {
     if (!questionEl) return false;
 
-    const answer = getResultAnswer(result);
+    const answer = getFillText(questionEl, result);
     if (!answer) return false;
 
-    if (fillChoice(questionEl, answer)) return true;
+    if (!isSubjectiveQuestion(questionEl) && fillChoice(questionEl, answer)) return true;
+    if (fillRichTextEditor(questionEl, answer)) return true;
     return fillBlanks(questionEl, answer);
   }
 
@@ -292,7 +437,7 @@
 
   async function fillVisibleQuestions(results) {
     const questionEls = Array.from(document.querySelectorAll('.exercise-item, .subject-item'))
-      .filter(el => el.querySelector('.item-body, .problem-body, .list-unstyled-radio, .list-unstyled-checkbox, input, textarea'));
+      .filter(el => el.querySelector('.item-body, .problem-body, .list-unstyled-radio, .list-unstyled-checkbox, input, textarea, iframe, [contenteditable="true"], .edui-editor'));
     let filled = 0;
     let missed = 0;
 
