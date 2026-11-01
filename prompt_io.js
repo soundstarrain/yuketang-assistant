@@ -58,31 +58,53 @@
     });
   }
 
+  async function mapWithConcurrency(items, limit, mapper) {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex++;
+        results[index] = await mapper(items[index]);
+      }
+    });
+    await Promise.all(workers);
+    return results;
+  }
+
   async function imageToPromptImage(image) {
     if (!image.src) return image;
     if (image.src.indexOf('data:') === 0) return Object.assign({}, image, { dataUrl: image.src });
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(image.src);
+      const response = await fetch(image.src, { signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const blob = await response.blob();
+      if (blob.size > 12 * 1024 * 1024) throw new Error('图片超过 12 MB，已跳过');
       return Object.assign({}, image, {
         mimeType: blob.type || '',
         dataUrl: await blobToDataUrl(blob)
       });
     } catch (error) {
       return Object.assign({}, image, { error: error.message || String(error) });
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
   async function attachPromptImages(questions) {
-    for (const question of questions) {
-      const converted = [];
-      for (const image of question.images || []) {
-        converted.push(await imageToPromptImage(image));
-      }
-      question.images = converted;
-    }
+    const tasks = [];
+    questions.forEach((question, questionIndex) => {
+      (question.images || []).forEach((image, imageIndex) => {
+        tasks.push({ questionIndex, imageIndex, image });
+      });
+    });
+    const converted = await mapWithConcurrency(tasks, 3, task => imageToPromptImage(task.image));
+    converted.forEach((image, index) => {
+      const task = tasks[index];
+      questions[task.questionIndex].images[task.imageIndex] = image;
+    });
     return questions;
   }
 
@@ -244,10 +266,23 @@
 
     const answer = result.answer || result.result || '';
     const solution = result.solution || result.explanation || result.reason || '';
-    const md = window.markdownit ? window.markdownit() : null;
+    const md = window.markdownit ? window.markdownit({ html: false }) : null;
     const solutionHtml = md ? md.render(String(solution || '')) : String(solution || '');
 
-    container.innerHTML = '<b>AI解答结果</b><div class="answer">答案：' + answer + '</div><div class="thinking">解答过程：' + solutionHtml + '</div>';
+    const heading = document.createElement('b');
+    heading.textContent = 'AI解答结果';
+    const answerNode = document.createElement('div');
+    answerNode.className = 'answer';
+    answerNode.textContent = '答案：' + String(answer);
+    const thinking = document.createElement('div');
+    thinking.className = 'thinking';
+    const label = document.createElement('span');
+    label.textContent = '解答过程：';
+    const solutionNode = document.createElement('div');
+    if (md) solutionNode.innerHTML = solutionHtml;
+    else solutionNode.textContent = String(solution || '');
+    thinking.append(label, solutionNode);
+    container.append(heading, answerNode, thinking);
     item.appendChild(container);
 
     if (window.Prism && window.Prism.highlightAllUnder) window.Prism.highlightAllUnder(container);
@@ -272,7 +307,7 @@
       type: IMPORT_MESSAGE_TYPE,
       results,
       source: 'yuketang-assistant'
-    }, '*');
+    }, window.location.origin);
     return true;
   }
 
@@ -290,7 +325,17 @@
     document.getElementById('confirmImportResults').onclick = () => {
       try {
         const raw = document.getElementById('importResultsText').value;
+        if (raw.length > 2000000) throw new Error('导入内容超过 2 MB 限制');
         const results = parseImportedResultsText(raw);
+        if (results.length > 500) throw new Error('一次最多导入 500 道题');
+        results.forEach((result, index) => {
+          if (!result || typeof result !== 'object') throw new Error(`第 ${index + 1} 条结果格式无效`);
+          const answer = String(result.answer ?? result.result ?? '');
+          const solution = String(result.solution ?? result.explanation ?? result.reason ?? '');
+          if (answer.length > 20000 || solution.length > 100000) {
+            throw new Error(`第 ${index + 1} 条结果内容过长`);
+          }
+        });
         let imported = 0;
 
         results.forEach((result, index) => {

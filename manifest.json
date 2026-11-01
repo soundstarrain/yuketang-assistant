@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "雨课堂考试助手",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "一键提取雨课堂/学堂在线题目，支持AI批量秒解、答案自动生成。支持紧凑布局模式，为截图搜题优化，快速搞定作业与考试。",
   "homepage_url": "https://github.com/soundstarrain/yuketang-assistant",
   "permissions": [
@@ -23,16 +23,8 @@
         "*://examination.xuetangx.com/result/*"
       ],
       "js": [
-        "libs/prism.min.js",
-        "libs/markdown-it.min.js",
-        "libs/katex.min.js",
-        "libs/auto-render.min.js",
         "answer_filler.js",
         "content.js"
-      ],
-      "css": [
-        "libs/katex.min.css",
-        "libs/prism-tomorrow.min.css"
       ],
       "run_at": "document_end"
     },
@@ -79,7 +71,8 @@
         "prompt_io.js"
       ],
       "matches": [
-        "<all_urls>"
+        "*://*.yuketang.cn/*",
+        "*://*.xuetangx.com/*"
       ]
     }
   ]

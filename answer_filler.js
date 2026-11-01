@@ -493,7 +493,13 @@
   };
 
   window.addEventListener('message', (event) => {
-    if (!event.data || event.data.type !== IMPORT_MESSAGE_TYPE) return;
+    const trustedWindows = window.__YKT_TRUSTED_RESULT_WINDOWS__;
+    if (event.origin !== window.location.origin ||
+        !trustedWindows?.has(event.source) ||
+        event.data?.type !== IMPORT_MESSAGE_TYPE ||
+        event.data?.source !== 'yuketang-assistant' ||
+        !Array.isArray(event.data.results) ||
+        event.data.results.length > 500) return;
 
     fillImportedResults(event.data.results).catch((error) => {
       console.error('导入解题结果失败', error);

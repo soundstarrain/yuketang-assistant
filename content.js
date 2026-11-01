@@ -17,6 +17,35 @@
 (function () {
   'use strict';
 
+  function sanitizeExtractedElement(root, baseURI) {
+    if (root.matches?.('script, style, link, base, meta, iframe, object, embed, foreignObject')) {
+      root.remove();
+      return root;
+    }
+    root.querySelectorAll('script, style, link, base, meta, iframe, object, embed, foreignObject').forEach(node => node.remove());
+    [root, ...root.querySelectorAll('*')].forEach(node => {
+      Array.from(node.attributes).forEach(attribute => {
+        const name = attribute.name.toLowerCase();
+        if (name.startsWith('on') || name === 'srcdoc' || name === 'srcset') {
+          node.removeAttribute(attribute.name);
+          return;
+        }
+
+        if (!['href', 'src', 'xlink:href', 'action', 'formaction'].includes(name)) return;
+        try {
+          const url = new URL(attribute.value, baseURI);
+          const isImageData = name === 'src' && node.tagName === 'IMG' && /^data:image\/(?:png|gif|jpe?g|webp|avif);/i.test(attribute.value);
+          const isSafeProtocol = url.protocol === 'http:' || url.protocol === 'https:' || isImageData;
+          if (!isSafeProtocol) node.removeAttribute(attribute.name);
+          else if (name !== 'href' || url.protocol !== 'mailto:') node.setAttribute(attribute.name, url.href);
+        } catch (error) {
+          node.removeAttribute(attribute.name);
+        }
+      });
+    });
+    return root;
+  }
+
   // ============ 配置管理器 ============
 
   /**
@@ -47,7 +76,7 @@
       return {
         app: {
           name: '雨课堂考试助手',
-          version: '1.3.0',
+          version: '1.4.0',
           description: '支持 PPT 模式和题目模式的试题提取工具'
         },
         selectors: {
@@ -75,11 +104,11 @@
             fallback: '题 {index}'
           },
           body: {
-            selectors: ['.item-body h4', 'h4'],
+            selectors: ['.item-body h4', '.problem-body', '.question-content', '.subject-content', '.stem', '.custom_ueditor_cn_body', 'h4'],
             fallback: '（题干提取失败）'
           },
           options: {
-            selectors: ['.list-unstyled-checkbox', '.list-unstyled-radio'],
+            selectors: ['.list-unstyled-checkbox', '.list-unstyled-radio', '.options-list', '.item-options', '.question-options'],
             labelSelectors: ['.checkboxInput', '.radioInput'],
             contentSelectors: ['.checkboxText', '.radioText'],
             fallback: '[主观题]'
@@ -138,7 +167,7 @@
           },
           supportedModels: ['gpt-4o'],
           concurrency: {
-            maxConcurrent: 30,
+            maxConcurrent: 3,
             timeout: 30000
           },
           questionTypes: {
@@ -453,7 +482,7 @@
 
     async handleSolveMultiple(questionsData, solveFunction, options = {}) {
       const {
-        maxConcurrent = 30,
+        maxConcurrent = 3,
         onProgress,
         onQuestionsStateChange
       } = options;
@@ -713,12 +742,27 @@
      * 检测页面上的题目元素和模式
      * @returns {Promise<Object>} { items: NodeList, mode: string, count: number }
      */
-    async detect() {
+    async detect(options = {}) {
+      const quiet = options.quiet === true;
       try {
         if (this.isCloudStudentExercisePage()) {
           const items = this.getCloudExerciseItems();
-          console.log(`✅ 检测到云作业练习页面，当前可见题目 ${items.length} 个`);
+          if (!quiet) console.log(`✅ 检测到云作业练习页面，当前可见题目 ${items.length} 个`);
           return { items, mode: 'cloudExercise', count: items.length || 1 };
+        }
+
+        if (this.isStudentQuizPage()) {
+          const pptItems = this.getStudentQuizPptItems();
+          if (pptItems.length > 0) {
+            if (!quiet) console.log(`✅ 检测到学生测验页面中的 PPT 内容，共 ${pptItems.length} 页`);
+            return { items: pptItems, mode: 'ppt', count: pptItems.length };
+          }
+
+          const items = this.getStudentQuizItems();
+          if (items.length > 0) {
+            if (!quiet) console.log(`✅ 检测到学生测验页面，当前渲染题目 ${items.length} 个`);
+            return { items, mode: 'question', count: items.length };
+          }
         }
 
         const config = await this.configManager.loadAppConfig();
@@ -728,21 +772,22 @@
         ];
 
         // 首先尝试配置中的选择器
+        const documents = this.getSearchDocuments();
         for (const { selector, mode } of selectors) {
-          const items = document.querySelectorAll(selector);
-          console.log(`🔍 尝试选择器 "${selector}"，找到 ${items.length} 个元素`);
+          const items = documents.flatMap(doc => Array.from(doc.querySelectorAll(selector)));
+          if (!quiet) console.log(`🔍 尝试选择器 "${selector}"，找到 ${items.length} 个元素`);
           if (items.length > 0) {
-            console.log(`✅ 使用选择器 "${selector}" 检测到 ${items.length} 个${mode === 'ppt' ? 'PPT' : '题目'}元素`);
+            if (!quiet) console.log(`✅ 使用选择器 "${selector}" 检测到 ${items.length} 个${mode === 'ppt' ? 'PPT' : '题目'}元素`);
             return { items, mode, count: items.length };
           }
         }
 
         // 如果配置选择器失败，尝试额外的选择器
-        console.warn('⚠️ 配置中的选择器未找到任何元素，尝试额外的选择器...');
+        if (!quiet) console.warn('⚠️ 配置中的选择器未找到任何元素，尝试额外的选择器...');
         for (const selector of this.additionalSelectors) {
-          const items = document.querySelectorAll(selector);
+          const items = documents.flatMap(doc => Array.from(doc.querySelectorAll(selector)));
           if (items.length > 0) {
-            console.log(`✅ 使用备用选择器 "${selector}" 找到 ${items.length} 个元素`);
+            if (!quiet) console.log(`✅ 使用备用选择器 "${selector}" 找到 ${items.length} 个元素`);
             // 根据选择器判断模式
             const mode = selector.includes('problem') ? 'ppt' : 'question';
             return { items, mode, count: items.length };
@@ -750,21 +795,76 @@
         }
 
         // 如果还是没找到，输出页面结构信息
-        console.warn('⚠️ 未找到任何题目元素');
-        console.log('📋 页面结构信息：');
-        console.log('  - 页面 URL:', window.location.href);
-        console.log('  - 页面标题:', document.title);
-        console.log('  - Body 类名:', document.body.className);
+        if (!quiet) {
+          console.warn('⚠️ 未找到任何题目元素');
+          console.log('📋 页面结构信息：');
+          console.log('  - 页面 URL:', window.location.href);
+          console.log('  - 页面标题:', document.title);
+          console.log('  - Body 类名:', document.body.className);
+        }
 
         return { items: [], mode: null, count: 0 };
       } catch (error) {
-        console.error('❌ 题目检测错误:', error);
+        if (!quiet) console.error('❌ 题目检测错误:', error);
         return { items: [], mode: null, count: 0 };
       }
     }
 
     isCloudStudentExercisePage() {
       return /\/v2\/web\/cloud\/student\/exercise\//.test(window.location.pathname);
+    }
+
+    isStudentQuizPage() {
+      return /\/v2\/web\/studentQuiz\//i.test(window.location.pathname);
+    }
+
+    getSearchDocuments() {
+      const documents = [];
+      const visited = new Set();
+      const pending = [document];
+
+      while (pending.length > 0 && documents.length < 16) {
+        const current = pending.shift();
+        if (!current || visited.has(current) || !current.documentElement) continue;
+        visited.add(current);
+        documents.push(current);
+
+        current.querySelectorAll('iframe').forEach(frame => {
+          try {
+            const childDocument = frame.contentDocument;
+            if (childDocument?.documentElement && childDocument.location.origin === window.location.origin) {
+              pending.push(childDocument);
+            }
+          } catch (error) {
+            // Cross-origin frames are intentionally skipped.
+          }
+        });
+      }
+
+      return documents;
+    }
+
+    getStudentQuizPptItems() {
+      return this.getSearchDocuments().flatMap(doc =>
+        Array.from(doc.querySelectorAll('.problem_item'))
+          .filter(node => node.querySelector('.pptimg, [data-background]'))
+      );
+    }
+
+    getStudentQuizItems() {
+      const selectors = [
+        '.subject-item', '.exercise-item', '.problem_item', '.question-item', '.question_item',
+        '.quiz-question', '.quiz-item', '[data-question-id]', '[data-question-index]'
+      ];
+      const candidates = new Set();
+      this.getSearchDocuments().forEach(doc => selectors.forEach(selector => {
+        doc.querySelectorAll(selector).forEach(node => candidates.add(node));
+      }));
+      return Array.from(candidates).filter(node => {
+        if (node.closest('#ykt-question-extractor')) return false;
+        const content = node.querySelector('.item-body, .problem-body, .question-content, .stem, .subject-content, h4');
+        return Boolean((content && (node.innerText || node.querySelector('img'))) || node.innerText?.trim());
+      });
     }
 
     getCloudExerciseItems() {
@@ -878,7 +978,13 @@
 
       imgs.forEach((img) => {
         const src = img.getAttribute(imgConfig.attribute);
-        if (src) images.push(src);
+        if (src) {
+          try {
+            images.push(new URL(src, questionElement.ownerDocument.baseURI).href);
+          } catch (error) {
+            images.push(src);
+          }
+        }
       });
 
       return images;
@@ -904,6 +1010,7 @@
 
       const config = await this.configManager.loadAppConfig();
       const clone = element.cloneNode(true);
+      sanitizeExtractedElement(clone, element.ownerDocument.baseURI);
       const removeConfig = config.contentProcessing.removeSelectors;
       const useless = clone.querySelectorAll(removeConfig.join(', '));
 
@@ -915,11 +1022,11 @@
 
       imgs.forEach((img) => {
         let src = img.getAttribute('src');
-        if (src && !src.startsWith('http')) {
-          if (src.startsWith('//')) {
-            img.src = window.location.protocol + src;
-          } else {
-            img.src = window.location.origin + src;
+        if (src && !/^(?:https?:|data:|blob:)/i.test(src)) {
+          try {
+            img.src = new URL(src, element.ownerDocument.baseURI).href;
+          } catch (error) {
+            console.warn('无法解析题目图片地址:', src, error);
           }
         }
         img.style.width = '';
@@ -1920,7 +2027,20 @@
     openInNewWindow(html) {
       const blob = new Blob([html], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      const popup = window.open(url, '_blank');
+      if (!popup) {
+        URL.revokeObjectURL(url);
+        throw new Error('浏览器阻止了结果窗口，请允许此站点打开弹出窗口后重试');
+      }
+
+      const trustedWindows = window.__YKT_TRUSTED_RESULT_WINDOWS__ || new Set();
+      for (const openWindow of trustedWindows) {
+        if (openWindow.closed) trustedWindows.delete(openWindow);
+      }
+      trustedWindows.add(popup);
+      window.__YKT_TRUSTED_RESULT_WINDOWS__ = trustedWindows;
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return popup;
     }
   }
 
@@ -1974,15 +2094,23 @@
 
       this.items.forEach((item, index) => {
         // 使用克隆，避免改动原页面 DOM
-        const clone = item.cloneNode(true);
+        const clone = sanitizeExtractedElement(item.cloneNode(true), item.ownerDocument.baseURI);
         const imgs = clone.querySelectorAll('.pptimg');
         imgs.forEach((div) => {
           let bg = div.getAttribute('data-background');
           if (bg) {
-            if (!bg.includes('http')) {
-              bg = bg.startsWith('//') ? window.location.protocol + bg : window.location.origin + bg;
+            try {
+              const url = new URL(bg, item.ownerDocument.baseURI);
+              const isImageData = /^data:image\/(?:png|gif|jpe?g|webp|avif);/i.test(bg);
+              if (!['http:', 'https:'].includes(url.protocol) && !isImageData) throw new Error('不支持的图片协议');
+              bg = isImageData ? bg : url.href;
+              div.setAttribute('data-background', bg);
+              div.style.backgroundImage = `url(${JSON.stringify(bg)})`;
+            } catch (error) {
+              console.warn('无法解析 PPT 图片地址:', bg, error);
+              div.style.backgroundImage = 'none';
+              div.removeAttribute('data-background');
             }
-            div.style.backgroundImage = `url("${bg}")`;
           }
           // 参考最初版本：不改动百分比定位与尺寸，只移除 transform 并确保显示
           div.style.transform = '';
@@ -2160,6 +2288,7 @@
 
     buildHTML(extractedData) {
       const questionCount = Array.isArray(extractedData) ? extractedData.length : this.items.length;
+      const aiConfigJson = JSON.stringify(this.aiConfig || {}).replace(/</g, '\\u003c');
       const head = `
         <head>
             <meta charset="utf-8">
@@ -2180,7 +2309,7 @@
             <script src="${chrome.runtime.getURL('libs/auto-render.min.js')}"></script>
             <script src="${chrome.runtime.getURL('libs/prism.min.js')}"></script>
             <script>
-               window.currentAIConfig = ${JSON.stringify(this.aiConfig || {})};
+               window.currentAIConfig = ${aiConfigJson};
             </script>
             <script>${this.getScripts()}</script>
             <script src="${chrome.runtime.getURL('prompt_io.js')}"></script>
@@ -2352,14 +2481,28 @@
                     if(container) container.remove();
                     container = document.createElement('div');
                     container.className='ai-result';
-            if(res && res.duration){
-              durationHtml = '<div class="ai-duration">用时：'+res.duration+'s</div>';
+            const heading = document.createElement('b');
+            heading.textContent = 'AI解答结果';
+            const answer = document.createElement('div');
+            answer.className = 'answer';
+            answer.textContent = '答案：' + String(res?.answer || '');
+            const thinking = document.createElement('div');
+            thinking.className = 'thinking';
+            const label = document.createElement('span');
+            label.textContent = '解答过程：';
+            thinking.appendChild(label);
+            const explanation = document.createElement('div');
+            const md = window.markdownit ? window.markdownit({ html: false }) : null;
+            if (md) explanation.innerHTML = md.render(String(res?.solution || '无解答过程'));
+            else explanation.textContent = String(res?.solution || '无解答过程');
+            thinking.appendChild(explanation);
+            container.append(heading, answer, thinking);
+            if (res?.duration) {
+              const duration = document.createElement('div');
+              duration.className = 'ai-duration';
+              duration.textContent = '用时：' + String(res.duration) + 's';
+              container.appendChild(duration);
             }
-
-            const md = window.markdownit();
-            const solutionHtml = res.solution ? md.render(res.solution) : '无解答过程';
-
-            container.innerHTML='<b>AI解答结果</b><div class="answer">答案：'+(res?.answer||'')+'</div><div class="thinking">解答过程：' + solutionHtml + '</div>'+durationHtml;
             el.appendChild(container);
 
             // 渲染代码和公式
@@ -2386,7 +2529,7 @@
                 }finally{ active.delete(id); }
               },
               async handleSolveMultiple(list, solveFn, opts={}){
-                const maxConcurrent = opts.maxConcurrent || 30;
+                const maxConcurrent = opts.maxConcurrent || 3;
                 const onProgress = opts.onProgress;
                 let running=0, done=0; const queue=[...list]; const results=[];
                 return await new Promise(resolve=>{
@@ -2499,8 +2642,8 @@
               model:document.getElementById('aiModel').value
             };
             window.currentAIConfig = config;
-            if(window.opener) {
-               window.opener.postMessage({ type: 'SAVE_AI_CONFIG', config: config }, '*');
+            if(window.opener && !window.opener.closed) {
+               window.opener.postMessage({ type: 'SAVE_AI_CONFIG', config: config }, window.location.origin);
             }
             window.closeAIConfig();
             if(window.Notification && typeof window.Notification.success === 'function'){
@@ -2521,12 +2664,12 @@
             active:new Set(),
             getItem:function(id){return document.querySelector('[data-index="'+id+'"]')||document.querySelector('[data-question-id="'+id+'"]')},
             clearOld:function(id){const el=this.getItem(id);if(!el)return;el.querySelectorAll('.ai-loading,.ai-error,.ai-result').forEach(n=>n.remove())},
-            showLoading:function(id){const el=this.getItem(id);if(!el)return;const d=document.createElement('div');d.className='ai-loading';d.innerHTML='⏳ 正在调用 AI...';(el.querySelector('.ai-tools')||el).after?el.querySelector('.ai-tools').after(d):el.appendChild(d)},
+            showLoading:function(id){const el=this.getItem(id);if(!el)return;const d=document.createElement('div');d.className='ai-loading';d.textContent='⏳ 正在调用 AI...';const tools=el.querySelector('.ai-tools');if(tools)tools.after(d);else el.appendChild(d)},
             hideLoading:function(id){const el=this.getItem(id);if(!el)return;const d=el.querySelector('.ai-loading');if(d)d.remove()},
-            renderSuccess:function(id,res){const el=this.getItem(id);if(!el)return;const c=document.createElement('div');c.className='ai-result';let durationHtml='';if(res.duration){durationHtml='<div class="ai-duration">用时：'+res.duration+'s</div>'}c.innerHTML='<b>AI解答结果</b><div class="answer">答案：'+(res.answer||'')+'</div><div class="thinking">解答过程：'+(res.solution||'')+'</div>'+durationHtml;el.appendChild(c)},
-            renderError:function(id,err){const el=this.getItem(id);if(!el)return;const c=document.createElement('div');c.className='ai-error';c.innerHTML='解析失败：'+(err&&err.message?err.message:String(err));el.appendChild(c)},
+            renderSuccess:function(id,res){const el=this.getItem(id);if(!el)return;const c=document.createElement('div');c.className='ai-result';const title=document.createElement('b');title.textContent='AI解答结果';const answer=document.createElement('div');answer.className='answer';answer.textContent='答案：'+String(res?.answer||'');const thinking=document.createElement('div');thinking.className='thinking';const label=document.createElement('span');label.textContent='解答过程：';const explanation=document.createElement('div');const md=window.markdownit?window.markdownit({html:false}):null;if(md)explanation.innerHTML=md.render(String(res?.solution||''));else explanation.textContent=String(res?.solution||'');thinking.append(label,explanation);c.append(title,answer,thinking);if(res?.duration){const duration=document.createElement('div');duration.className='ai-duration';duration.textContent='用时：'+String(res.duration)+'s';c.appendChild(duration)}el.appendChild(c)},
+            renderError:function(id,err){const el=this.getItem(id);if(!el)return;const c=document.createElement('div');c.className='ai-error';c.textContent='解析失败：'+(err&&err.message?err.message:String(err));el.appendChild(c)},
             async handleSolveQuestion(id,data,solve){id=String(id);if(this.active.has(id))return null;this.active.add(id);try{this.clearOld(id);this.showLoading(id);const res=await solve(data);this.hideLoading(id);this.renderSuccess(id,res);return res}catch(e){this.hideLoading(id);this.renderError(id,e);return null}finally{this.active.delete(id)}},
-            async handleSolveMultiple(list,solve,opt={maxConcurrent:30,onProgress:null}){const q=[...list];let running=0,done=0;return await new Promise(resolve=>{const next=()=>{if(q.length===0&&running===0){resolve();return}if(running>=(opt.maxConcurrent||3)||q.length===0)return;running++;const it=q.shift();this.handleSolveQuestion(it.id||it.index,it,solve).then(()=>{done++;if(opt.onProgress)opt.onProgress(done,list.length)}).finally(()=>{running--;next()});};for(let i=0;i<Math.min(opt.maxConcurrent||30,q.length);i++)next();});}
+            async handleSolveMultiple(list,solve,opt={maxConcurrent:3,onProgress:null}){const q=[...list];let running=0,done=0;return await new Promise(resolve=>{const next=()=>{if(q.length===0&&running===0){resolve();return}while(running<(opt.maxConcurrent||3)&&q.length>0){running++;const it=q.shift();this.handleSolveQuestion(it.id??it.index,it,solve).then(()=>{done++;if(opt.onProgress)opt.onProgress(done,list.length)}).catch(()=>{}).finally(()=>{running--;next()});}};next();});}
           };
         }
         
@@ -2563,6 +2706,7 @@
           const response=await fetch(config.url+'/chat/completions',{
             method:'POST',
             headers:{'Content-Type':'application/json','Authorization':'Bearer '+config.key},
+               signal: AbortSignal.timeout(30000),
             body:JSON.stringify({model:config.model,messages:[{role:'system',content:systemPrompt},{role:'user',content:content}],temperature:0.7,max_tokens:50000})
           });
           
@@ -2644,6 +2788,7 @@
             const response=await fetch(config.url+'/chat/completions',{
               method:'POST',
               headers:{'Content-Type':'application/json','Authorization':'Bearer '+config.key},
+               signal: AbortSignal.timeout(30000),
               body:JSON.stringify({model:config.model,messages:[{role:'system',content:systemPrompt},{role:'user',content:content}],temperature:0.7,max_tokens:50000})
             });
             
@@ -2680,7 +2825,7 @@
               duration: duration
             };
           },
-          {maxConcurrent:30,onProgress:(completed,total)=>{console.log('进度：'+completed+'/'+total)}}
+          {maxConcurrent:3,onProgress:(completed,total)=>{console.log('进度：'+completed+'/'+total)}}
         );
         
         window.Notification.success('全部题目解析完成！')
@@ -2750,6 +2895,24 @@
    */
   async function init() {
     try {
+      if (window.__YKT_INIT_PROMISE__) return window.__YKT_INIT_PROMISE__;
+      window.__YKT_INIT_PROMISE__ = initializeApp();
+      try {
+        return await window.__YKT_INIT_PROMISE__;
+      } finally {
+        window.__YKT_INIT_PROMISE__ = null;
+      }
+    } catch (error) {
+      console.error('YKT initialization error:', error);
+    }
+  }
+
+  async function initializeApp() {
+    try {
+      if (document.getElementById('ykt-question-extractor')) {
+        console.info('Extractor UI already exists; skipping duplicate render.');
+        return;
+      }
       if (window.top !== window.self) {
         console.log('ℹ️ 跳过 iframe 内的雨课堂助手初始化');
         return;
@@ -2771,7 +2934,12 @@
 
       // 创建检测器
       const detector = new QuestionDetector(configManager);
-      const { items, mode, count } = await detector.detect();
+      let detected = await detector.detect();
+      if (detected.count === 0 && detector.isStudentQuizPage()) {
+        console.info('Student quiz is still rendering; waiting for question DOM...');
+        detected = await waitForStudentQuizItems(detector, 12000);
+      }
+      const { items, mode, count } = detected;
 
       if (count === 0) {
         console.warn('⚠️ 未找到任何题目元素，可能原因：');
@@ -2785,9 +2953,8 @@
       console.log(`✅ 检测到 ${count} 个${mode === 'ppt' ? 'PPT' : '题目'}元素`);
 
       if (mode === 'ppt') {
-        const extractor = new DataExtractor(configManager);
         const renderer = new PPTRenderer(items, config);
-        renderer.render();
+        await renderer.render();
       } else if (mode === 'cloudExercise') {
         const extractor = new CloudExerciseExtractor(configManager);
         const extractedData = await extractor.extractAll();
@@ -2804,7 +2971,7 @@
           extractor: null,
           extractedData
         }, aiConfig);
-        renderer.render();
+        await renderer.render();
       } else if (mode === 'question') {
         const extractor = new DataExtractor(configManager);
         const aiConfig = await new Promise(resolve => chrome.storage.local.get(['aiConfig'], res => resolve(res.aiConfig || {})));
@@ -2814,7 +2981,7 @@
           layoutManager: null, // Placeholder
           extractor: extractor
         }, aiConfig);
-        renderer.render();
+        await renderer.render();
       }
       console.log('✅ 渲染完成');
 
@@ -2823,6 +2990,103 @@
       console.error('错误堆栈:', error.stack);
     }
   }
+
+  function waitForStudentQuizItems(detector, timeoutMs) {
+    return new Promise(resolve => {
+      let settled = false;
+      let checking = false;
+      let timeout;
+      let scanTimer;
+      const observers = [];
+      const observedDocuments = new Set();
+      const observedFrames = new WeakSet();
+
+      const cleanup = () => {
+        observers.forEach(observer => observer.disconnect());
+        clearTimeout(timeout);
+        clearTimeout(scanTimer);
+      };
+
+      const finish = result => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(result);
+      };
+
+      const scan = async () => {
+        if (settled || checking) return;
+        checking = true;
+        try {
+          observeDocuments();
+          const result = await detector.detect({ quiet: true });
+          if (result.count > 0) finish(result);
+        } finally {
+          checking = false;
+        }
+      };
+
+      const scheduleScan = () => {
+        if (settled) return;
+        clearTimeout(scanTimer);
+        scanTimer = setTimeout(scan, 120);
+      };
+
+      const observeDocuments = () => {
+        detector.getSearchDocuments().forEach(doc => {
+          if (observedDocuments.has(doc)) return;
+          observedDocuments.add(doc);
+
+          const observer = new MutationObserver(scheduleScan);
+          observer.observe(doc.documentElement, { childList: true, subtree: true });
+          observers.push(observer);
+
+          doc.querySelectorAll('iframe').forEach(frame => {
+            if (observedFrames.has(frame)) return;
+            observedFrames.add(frame);
+            frame.addEventListener('load', () => {
+              observeDocuments();
+              scheduleScan();
+            });
+          });
+        });
+      };
+
+      observeDocuments();
+      scheduleScan();
+      timeout = setTimeout(async () => finish(await detector.detect({ quiet: true })), timeoutMs);
+    });
+  }
+
+  function normalizeAIConfig(config) {
+    if (!config || typeof config !== 'object') return null;
+    const urlText = typeof config.url === 'string' ? config.url.trim() : '';
+    const key = typeof config.key === 'string' ? config.key.trim() : '';
+    const model = typeof config.model === 'string' ? config.model.trim() : '';
+    if (urlText.length > 2048 || key.length > 4096 || model.length > 256) return null;
+
+    let url = '';
+    if (urlText) {
+      try {
+        const parsed = new URL(urlText);
+        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return null;
+        url = parsed.href.replace(/\/+$/, '');
+      } catch (error) {
+        return null;
+      }
+    }
+    return { url, key, model };
+  }
+
+  window.addEventListener('message', event => {
+    const trustedWindows = window.__YKT_TRUSTED_RESULT_WINDOWS__;
+    if (event.origin !== window.location.origin ||
+        !trustedWindows?.has(event.source) ||
+        event.data?.type !== 'SAVE_AI_CONFIG') return;
+    const aiConfig = normalizeAIConfig(event.data.config);
+    if (!aiConfig) return;
+    chrome.storage.local.set({ aiConfig });
+  });
 
   // 暴露 init 函数到全局作用域，供插件按钮点击时调用
   window.__YKT_INIT__ = init;

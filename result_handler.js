@@ -13,6 +13,63 @@
 (function () {
   'use strict';
 
+  const trustedResultWindows = new Set();
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[character]));
+  }
+
+  function sanitizeExtractedElement(root, baseURI) {
+    if (root.matches?.('script, style, link, base, meta, iframe, object, embed, foreignObject')) {
+      root.remove();
+      return root;
+    }
+    root.querySelectorAll('script, style, link, base, meta, iframe, object, embed, foreignObject').forEach(node => node.remove());
+    root.querySelectorAll('*').forEach(node => {
+      Array.from(node.attributes).forEach(attribute => {
+        const name = attribute.name.toLowerCase();
+        if (name.startsWith('on') || name === 'srcdoc' || name === 'srcset') {
+          node.removeAttribute(attribute.name);
+          return;
+        }
+        if (!['href', 'src', 'xlink:href', 'action', 'formaction'].includes(name)) return;
+        try {
+          const url = new URL(attribute.value, baseURI);
+          const isImageData = name === 'src' && node.tagName === 'IMG' && /^data:image\/(?:png|gif|jpe?g|webp|avif);/i.test(attribute.value);
+          if (url.protocol !== 'http:' && url.protocol !== 'https:' && !isImageData) {
+            node.removeAttribute(attribute.name);
+          } else {
+            node.setAttribute(attribute.name, url.href);
+          }
+        } catch (error) {
+          node.removeAttribute(attribute.name);
+        }
+      });
+    });
+    return root;
+  }
+
+  function normalizeAIConfig(config) {
+    if (!config || typeof config !== 'object') return null;
+    const urlText = typeof config.url === 'string' ? config.url.trim() : '';
+    const key = typeof config.key === 'string' ? config.key.trim() : '';
+    const model = typeof config.model === 'string' ? config.model.trim() : '';
+    if (urlText.length > 2048 || key.length > 4096 || model.length > 256) return null;
+    let url = '';
+    if (urlText) {
+      try {
+        const parsed = new URL(urlText);
+        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return null;
+        url = parsed.href.replace(/\/+$/, '');
+      } catch (error) {
+        return null;
+      }
+    }
+    return { url, key, model };
+  }
+
   // ============ 配置管理器 ============
   class ConfigManager {
     constructor() {
@@ -25,7 +82,7 @@
 
     getDefaultConfig() {
       return {
-        app: { name: '雨课堂考试助手', version: '1.3.0' },
+        app: { name: '雨课堂考试助手', version: '1.4.0' },
         ui: {
           colors: {
             question: {
@@ -72,7 +129,7 @@
 
     // 批量处理逻辑
     async handleSolveMultiple(questionsData, solveFunction, options = {}) {
-      const { maxConcurrent = 10, onProgress } = options;
+      const { maxConcurrent = 3, onProgress } = options;
       const queue = [...questionsData];
       let running = 0;
       let completed = 0;
@@ -130,15 +187,27 @@
         div.className = this.config.resultClass;
 
         // 使用 markdown-it 如果可用
-        const md = window.markdownit ? window.markdownit() : null;
-        const solutionHtml = md ? md.render(result.solution || '') : (result.solution || '无解答过程');
-
-        div.innerHTML = `
-          <b>AI 解答结果</b>
-          <div class="answer">答案：${result.answer || '无法获取答案'}</div>
-          <div class="thinking">解答过程：${solutionHtml}</div>
-          ${result.duration ? `<div class="ai-duration">用时：${result.duration}s</div>` : ''}
-        `;
+        const md = window.markdownit ? window.markdownit({ html: false }) : null;
+        const heading = document.createElement('b');
+        heading.textContent = 'AI 解答结果';
+        const answer = document.createElement('div');
+        answer.className = 'answer';
+        answer.textContent = '答案：' + String(result.answer || '无法获取答案');
+        const thinking = document.createElement('div');
+        thinking.className = 'thinking';
+        const label = document.createElement('span');
+        label.textContent = '解答过程：';
+        const solution = document.createElement('div');
+        if (md) solution.innerHTML = md.render(String(result.solution || '无解答过程'));
+        else solution.textContent = String(result.solution || '无解答过程');
+        thinking.append(label, solution);
+        div.append(heading, answer, thinking);
+        if (result.duration) {
+          const duration = document.createElement('div');
+          duration.className = 'ai-duration';
+          duration.textContent = '用时：' + String(result.duration) + 's';
+          div.appendChild(duration);
+        }
         el.appendChild(div);
 
         // 渲染高亮和公式
@@ -159,7 +228,7 @@
       if (el) {
         const div = document.createElement('div');
         div.className = this.config.errorClass;
-        div.innerText = '解析失败: ' + (error.message || '未知错误');
+        div.textContent = '解析失败: ' + (error.message || '未知错误');
         el.appendChild(div);
       }
     }
@@ -295,7 +364,9 @@
           // Clean up content
           if (contentEl || content) {
             const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = contentEl ? contentEl.innerHTML : content;
+            if (contentEl) tempDiv.innerHTML = contentEl.innerHTML;
+            else tempDiv.textContent = content;
+            sanitizeExtractedElement(tempDiv, (contentEl || li).ownerDocument.baseURI);
             this.fixImages(tempDiv);
             // Remove standard label if it was included in content
             content = tempDiv.innerHTML.replace(/\s+/g, ' ').trim();
@@ -303,11 +374,13 @@
 
           // If still empty, maybe it's just an image directly in li?
           if (!content && li.querySelector('img')) {
-            content = li.innerHTML;
+            const safeOption = sanitizeExtractedElement(li.cloneNode(true), li.ownerDocument.baseURI);
+            this.fixImages(safeOption);
+            content = safeOption.innerHTML;
           }
 
           if (label || content) {
-            optionsHtml += `<div class="q-opt"><span class="q-opt-label">${label}.</span><div class="q-opt-content">${content}</div></div>`;
+              optionsHtml += `<div class="q-opt"><span class="q-opt-label">${escapeHtml(label)}.</span><div class="q-opt-content">${content}</div></div>`;
           }
         });
       }
@@ -328,7 +401,7 @@
         if (expContent) {
           explanation = await this.processContent(expContent);
         } else {
-          explanation = footerBody.innerHTML;
+          explanation = await this.processContent(footerBody);
         }
       }
 
@@ -345,6 +418,7 @@
     async processContent(element) {
       if (!element) return '';
       const clone = element.cloneNode(true);
+      sanitizeExtractedElement(clone, element.ownerDocument.baseURI);
       // Remove useless tags
       const removeSelectors = ['.el-icon-loading', '.upload-body', '.el-checkbox__input', '.el-radio__input', '.item-type']; // Added item-type to removal if it accidentally got in
       clone.querySelectorAll(removeSelectors.join(', ')).forEach(e => e.remove());
@@ -357,10 +431,12 @@
     fixImages(root) {
       root.querySelectorAll('img').forEach(img => {
         let src = img.getAttribute('src');
-        if (src && src.startsWith('//')) {
-          img.src = window.location.protocol + src;
-        } else if (src && !src.startsWith('http')) {
-          img.src = window.location.origin + (src.startsWith('/') ? '' : '/') + src;
+        if (src) {
+          try {
+            img.src = new URL(src, root.ownerDocument?.baseURI || document.baseURI).href;
+          } catch (error) {
+            img.removeAttribute('src');
+          }
         }
         img.style.maxWidth = '300px';
         img.style.maxHeight = '150px';
@@ -383,7 +459,18 @@
       const html = this.buildHTML();
       const blob = new Blob([html], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      const popup = window.open(url, '_blank');
+      if (!popup) {
+        URL.revokeObjectURL(url);
+        throw new Error('浏览器阻止了结果窗口，请允许此站点打开弹出窗口后重试');
+      }
+      for (const openWindow of trustedResultWindows) {
+        if (openWindow.closed) trustedResultWindows.delete(openWindow);
+      }
+      trustedResultWindows.add(popup);
+      window.__YKT_TRUSTED_RESULT_WINDOWS__ = trustedResultWindows;
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return popup;
     }
 
     buildHTML() {
@@ -392,6 +479,7 @@
       const toolbar = this.buildToolbar();
       const content = this.data.map((item, idx) => this.buildQuestionItem(item, idx)).join('');
       const modals = this.buildModals();
+      const aiConfigJson = JSON.stringify(this.aiConfig || {}).replace(/</g, '\\u003c');
 
       return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -411,7 +499,7 @@ ${modals}
 <script src="${chrome.runtime.getURL('libs/auto-render.min.js')}"></script>
 <script src="${chrome.runtime.getURL('libs/prism.min.js')}"></script>
 <script>
-  window.currentAIConfig = ${JSON.stringify(this.aiConfig || {})};
+  window.currentAIConfig = ${aiConfigJson};
 </script>
 <script>${scripts}</script>
 <script src="${chrome.runtime.getURL('prompt_io.js')}"></script>
@@ -437,11 +525,11 @@ ${modals}
 
     buildQuestionItem(data, index) {
       // 包含正确答案和解析显示
-      const answerSection = data.correctAnswer ? `<div class="q-answer-block"><strong>${data.correctAnswer}</strong></div>` : '';
+      const answerSection = data.correctAnswer ? `<div class="q-answer-block"><strong>${escapeHtml(data.correctAnswer)}</strong></div>` : '';
       const expSection = data.explanation ? `<div class="q-explanation-block"><div class="exp-label">解析：</div><div class="exp-content">${data.explanation}</div></div>` : '';
 
       return `<div class="q-item" data-index="${index}">
-        <div class="q-meta">${data.meta}</div>
+        <div class="q-meta">${escapeHtml(data.meta)}</div>
         <div class="q-body">${data.body}</div>
         ${data.options}
         ${answerSection}
@@ -549,9 +637,17 @@ ${modals}
                      ld.remove();
                      let resDiv = document.createElement('div');
                      resDiv.className='ai-result';
-                     const md = window.markdownit ? window.markdownit() : null;
-                     const sol = md ? md.render(res.solution||'') : (res.solution||'');
-                     resDiv.innerHTML = '<b>AI结果</b><div class="answer">答案：'+(res.answer||'')+'</div><div class="thinking">'+sol+'</div>';
+                      const md = window.markdownit ? window.markdownit({html:false}) : null;
+                      const title = document.createElement('b');
+                      title.textContent = 'AI结果';
+                      const answer = document.createElement('div');
+                      answer.className = 'answer';
+                      answer.textContent = '答案：' + String(res?.answer || '');
+                      const thinking = document.createElement('div');
+                      thinking.className = 'thinking';
+                      if (md) thinking.innerHTML = md.render(String(res?.solution || ''));
+                      else thinking.textContent = String(res?.solution || '');
+                      resDiv.append(title, answer, thinking);
                      
                      // highlight & math
                      if(window.Prism && window.Prism.highlightAllUnder) window.Prism.highlightAllUnder(resDiv);
@@ -609,18 +705,31 @@ ${modals}
         };
         window.closeAIConfig = () => document.getElementById('aiConfigModal').classList.remove('show');
         window.saveAIConfig = () => {
-            const cfg = {
-                url: document.getElementById('aiUrl').value,
-                key: document.getElementById('aiKey').value,
-                model: document.getElementById('aiModel').value
-            };
-            window.currentAIConfig = cfg; // Update local memory
-            // Send message to opener to save to storage
-            if (window.opener) {
-                window.opener.postMessage({ type: 'SAVE_AI_CONFIG', config: cfg }, '*');
+            try {
+                const cfg = {
+                    url: document.getElementById('aiUrl').value.trim(),
+                    key: document.getElementById('aiKey').value.trim(),
+                    model: document.getElementById('aiModel').value.trim()
+                };
+                if (cfg.url) {
+                    const parsed = new URL(cfg.url);
+                    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+                        throw new Error('API URL 仅支持 HTTP 或 HTTPS 地址');
+                    }
+                    cfg.url = parsed.href.replace(/\/+$/, '');
+                }
+                if (cfg.url.length > 2048 || cfg.key.length > 4096 || cfg.model.length > 256) {
+                    throw new Error('配置内容过长');
+                }
+                window.currentAIConfig = cfg;
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({ type: 'SAVE_AI_CONFIG', config: cfg }, window.location.origin);
+                }
+                window.closeAIConfig();
+                Notification.success('配置已更新 (请在原页面确认保存)');
+            } catch (error) {
+                Notification.error('配置无效：' + (error?.message || String(error)));
             }
-            window.closeAIConfig();
-            Notification.success('配置已更新 (请在原页面确认保存)');
         };
 
         // Solve One
@@ -653,6 +762,7 @@ ${modals}
                 const resp = await fetch(config.url+'/chat/completions', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer '+config.key},
+                    signal: AbortSignal.timeout(30000),
                     body: JSON.stringify({
                         model: config.model || 'gpt-4o-mini',
                         messages: [{role:'system', content: systemPrompt}, {role:'user', content: contentText}],
@@ -686,17 +796,16 @@ ${modals}
 
 
         // Solve All
-        window.aiSolveAll = () => {
-             const items = document.querySelectorAll('.q-item');
-             window.requestController.handleSolveMultiple(
-                 Array.from(items).map((el, i) => ({id: i})),
-                 async (data) => {
-                     // Normally we'd reuse aiSolveOne logic but separated for clarity in actual implementation
-                     // Here we just trigger clicks to reuse aiSolveOne logic simplistically or properly implement batch
-                     await window.aiSolveOne(data.id);
-                 },
-                 { maxConcurrent: 3 }
-             );
+        window.aiSolveAll = async () => {
+             const ids = Array.from(document.querySelectorAll('.q-item'), (el, i) => i);
+             let next = 0;
+             const worker = async () => {
+                 while (next < ids.length) {
+                     const id = ids[next++];
+                     await window.aiSolveOne(id);
+                 }
+             };
+             await Promise.all(Array.from({length: Math.min(3, ids.length)}, worker));
         };
       `;
     }
@@ -704,32 +813,44 @@ ${modals}
 
   // ============ 主程序入口 ============
   async function init() {
+    if (window.__YKT_RESULT_HANDLER_INIT__) return;
+    window.__YKT_RESULT_HANDLER_INIT__ = true;
     console.log('雨课堂助手：复习模式启动');
-    const configManager = new ConfigManager();
-    const config = await configManager.loadAppConfig();
-
-    // 1. 等待 DOM 加载
-    // 简单检测：如果有 .result_item 则认为加载完成，或者等待一段时间
-    // 更好的方式：MutationObserver 或 轮询
-    let attempts = 0;
-    const checkExist = setInterval(async () => {
-      const items = document.querySelectorAll('.subject-item');
-      if (items.length > 0 || attempts > 20) {
-        clearInterval(checkExist);
-        if (items.length > 0) {
-          // 2. 注入浮动按钮
-          createFloatingButton(configManager);
-        }
-      }
-      attempts++;
-    }, 500);
+    if (await waitForResultItems(10000)) createFloatingButton();
   }
 
-  function createFloatingButton(configManager) {
-    const btn = document.createElement('div');
-    btn.className = 'floating-extract-btn'; // Add class for global access
+  function waitForResultItems(timeoutMs) {
+    return new Promise(resolve => {
+      let settled = false;
+      let timeout;
+      let observer;
+      const finish = found => {
+        if (settled) return;
+        settled = true;
+        observer?.disconnect();
+        clearTimeout(timeout);
+        resolve(found);
+      };
+      const check = () => {
+        if (document.querySelector('.subject-item')) finish(true);
+      };
+      check();
+      if (settled) return;
+      observer = new MutationObserver(check);
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+      timeout = setTimeout(() => finish(false), timeoutMs);
+    });
+  }
+
+  function createFloatingButton() {
+    if (document.querySelector('.floating-extract-btn')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'floating-extract-btn';
+    btn.title = '提取试卷题目';
+    btn.setAttribute('aria-label', '提取试卷题目');
     btn.innerHTML = '<svg viewBox="0 0 24 24" width="30" height="30" fill="white"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/><path d="M7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/></svg><div style="font-size:12px;margin-top:2px;">提取</div>';
-    btn.style.cssText = 'position:fixed;bottom:100px;right:20px;width:70px;height:70px;background:#27ae60;color:white;border-radius:50%;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;cursor:pointer;box-shadow:0 6px 16px rgba(39,174,96,0.5);z-index:99999;transition:transform 0.2s, box-shadow 0.2s;';
+    btn.style.cssText = 'position:fixed;bottom:100px;right:20px;width:70px;height:70px;padding:0;border:0;background:#27ae60;color:white;border-radius:50%;font:inherit;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;cursor:pointer;box-shadow:0 6px 16px rgba(39,174,96,0.5);z-index:99999;transition:transform 0.2s, box-shadow 0.2s;';
 
     btn.onmouseenter = () => {
       btn.style.transform = 'scale(1.1) translateY(-2px)';
@@ -746,14 +867,15 @@ ${modals}
     document.body.appendChild(btn);
   }
 
+  let extractionRunning = false;
+
   // Define the extraction logic globally so it can be triggered by message or button
   window.triggerExtraction = async (btnElement) => {
+    if (extractionRunning) return;
+    extractionRunning = true;
     // Mock button if driven by message
     const btn = btnElement || document.querySelector('.floating-extract-btn') || { style: {}, innerHTML: '' };
-
-    // Save original state if it's a real button
-    const originalHTML = btn.innerHTML;
-    const originalBg = btn.style.background;
+    if (btnElement) btn.disabled = true;
 
     if (btnElement) {
       btn.innerHTML = '<div style="font-size:12px;">提取中...</div>';
@@ -793,16 +915,18 @@ ${modals}
         btn.innerHTML = '重试';
         btn.style.background = '#e74c3c';
       }
+    } finally {
+      extractionRunning = false;
+      if (btnElement) btn.disabled = false;
     }
   };
 
-  // Listen for config save requests AND extraction triggers
-  window.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'SAVE_AI_CONFIG') {
-      chrome.storage.local.set({ aiConfig: event.data.config }, () => {
-        console.log('AI Config saved via postMessage');
-      });
-    }
+  window.addEventListener('message', event => {
+    if (event.origin !== window.location.origin ||
+        !trustedResultWindows.has(event.source) ||
+        event.data?.type !== 'SAVE_AI_CONFIG') return;
+    const aiConfig = normalizeAIConfig(event.data.config);
+    if (aiConfig) chrome.storage.local.set({ aiConfig });
   });
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

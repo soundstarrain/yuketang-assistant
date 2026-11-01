@@ -21,11 +21,7 @@ chrome.action.onClicked.addListener((tab) => {
 
     if (url.includes('yuketang.cn') || url.includes('xuetangx.com')) {
       // 先注入页面桥接和主入口（如果还未注入）
-      chrome.scripting.executeScript({
-        target: { tabId: tab.id, allFrames: false },
-        files: ['answer_filler.js', 'content.js']
-      }, () => {
-        // 然后执行 init 函数
+      const initializePage = () => {
         chrome.scripting.executeScript({
           target: { tabId: tab.id, allFrames: false },
           function: () => {
@@ -35,6 +31,24 @@ chrome.action.onClicked.addListener((tab) => {
               console.warn('⚠️ 插件初始化函数未找到，请刷新页面后重试');
             }
           }
+        });
+      };
+
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false },
+        function: () => typeof window.__YKT_INIT__ === 'function'
+      }, results => {
+        if (chrome.runtime.lastError) return;
+        if (results?.[0]?.result) {
+          initializePage();
+          return;
+        }
+
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: false },
+          files: ['answer_filler.js', 'content.js']
+        }, () => {
+          if (!chrome.runtime.lastError) initializePage();
         });
       });
     } else {
@@ -47,13 +61,22 @@ chrome.action.onClicked.addListener((tab) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'YKT_FETCH_ARRAY_BUFFER' || !message.url) return false;
+  if (sender?.id !== chrome.runtime.id || String(message.url).length > 2048) {
+    sendResponse({ ok: false, error: 'Invalid request' });
+    return false;
+  }
 
   let url;
   try {
     url = new URL(message.url);
     const allowedHost = /(^|\.)yuketang\.cn$/.test(url.hostname) || /(^|\.)xuetangx\.com$/.test(url.hostname);
     const allowedFont = /\/exam_font_[^/]+\.(ttf|otf|woff2?|eot)$/i.test(url.pathname);
-    if (!allowedHost || !allowedFont) throw new Error('URL not allowed');
+    const sourceUrl = sender.tab?.url ? new URL(sender.tab.url) : null;
+    const sourceAllowed = Boolean(sourceUrl && (
+      /(^|\.)yuketang\.cn$/.test(sourceUrl.hostname) ||
+      /(^|\.)xuetangx\.com$/.test(sourceUrl.hostname)
+    ));
+    if (!allowedHost || !allowedFont || !sourceAllowed) throw new Error('URL not allowed');
   } catch (error) {
     sendResponse({ ok: false, error: error.message || String(error) });
     return false;
@@ -62,9 +85,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   fetch(url.href)
     .then(response => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const length = Number(response.headers.get('content-length') || 0);
+      if (length > 32 * 1024 * 1024) throw new Error('字体文件过大');
       return response.arrayBuffer();
     })
     .then(buffer => {
+      if (buffer.byteLength > 32 * 1024 * 1024) throw new Error('字体文件过大');
       const bytes = new Uint8Array(buffer);
       let binary = '';
       const chunkSize = 0x8000;
